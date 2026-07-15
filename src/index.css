@@ -1,0 +1,85 @@
+@import "tailwindcss";
+
+/* ------------------------------------------------------------------ fonts */
+.font-display {
+  font-family: "Cinzel", "Times New Roman", Georgia, serif;
+}
+
+body {
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  background-color: #191713;
+}
+
+/* ------------------------------------------------------- board animations */
+
+/* marching dashed lines (order arrows + target highlights) */
+.rd-march {
+  animation: rd-dash 1.1s linear infinite;
+}
+@keyframes rd-dash {
+  to {
+    stroke-dashoffset: -15;
+  }
+}
+
+/* slowly rotating selection ring */
+.rd-spin {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: rd-rotate 9s linear infinite;
+}
+@keyframes rd-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* pulse ring drawn around provinces that changed hands (plays, then rests) */
+.rd-changed {
+  animation: rd-glow 1.15s ease-in-out 4;
+}
+@keyframes rd-glow {
+  0%,
+  100% {
+    stroke-opacity: 1;
+  }
+  50% {
+    stroke-opacity: 0.25;
+  }
+}
+
+/* small circular map buttons (zoom controls) */
+.rd-mapbtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: rgba(248, 241, 222, 0.92);
+  border: 1px solid #a08c60;
+  color: #5c5140;
+  box-shadow: 0 1px 3px rgba(60, 50, 30, 0.35);
+  transition:
+    background 0.15s ease,
+    transform 0.1s ease;
+}
+.rd-mapbtn:hover {
+  background: #fff8e6;
+}
+.rd-mapbtn:active {
+  transform: scale(0.92);
+}
+
+/* ------------------------------------------------------- scrollbar polish */
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(160, 140, 96, 0.5);
+  border-radius: 4px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}

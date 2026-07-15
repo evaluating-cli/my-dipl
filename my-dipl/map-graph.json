@@ -1,0 +1,555 @@
+{
+  "map_meta": {
+    "title": "Diplomacy Standard Map Graph",
+    "description": "Adjacency list mapping for a simultaneous turn-based game engine. Encodes connectivity constraints for armies, fleets, and split-coast variations.",
+    "total_provinces": 75
+  },
+  "provinces": [
+    {
+      "id": "BUC",
+      "name": "Bucharest",
+      "type": "inland",
+      "supply_center": true,
+      "neighbors": ["BUD", "GAL", "UKR", "SEV", "ARM", "BUL", "SER"]
+    },
+    {
+      "id": "BUD",
+      "name": "Budapest",
+      "type": "inland",
+      "supply_center": true,
+      "neighbors": ["VIE", "GAL", "BUC", "SER", "TRI"]
+    },
+    {
+      "id": "BOH",
+      "name": "Bohemia",
+      "type": "inland",
+      "supply_center": false,
+      "neighbors": ["MUN", "SIL", "GAL", "VIE", "TYR"]
+    },
+    {
+      "id": "BUR",
+      "name": "Burgundy",
+      "type": "inland",
+      "supply_center": false,
+      "neighbors": ["PAR", "PIC", "BEL", "RUR", "MUN", "MAR", "GAS"]
+    },
+    {
+      "id": "GAL",
+      "name": "Galicia",
+      "type": "inland",
+      "supply_center": false,
+      "neighbors": ["VIE", "BOH", "SIL", "WAR", "UKR", "BUC", "BUD"]
+    },
+    {
+      "id": "MOS",
+      "name": "Moscow",
+      "type": "inland",
+      "supply_center": true,
+      "neighbors": ["STP", "SEV", "UKR", "WAR", "LIV"]
+    },
+    {
+      "id": "MUN",
+      "name": "Munich",
+      "type": "inland",
+      "supply_center": true,
+      "neighbors": ["RUR", "KIE", "BER", "SIL", "BOH", "VIE", "TYR", "BUR"]
+    },
+    {
+      "id": "PAR",
+      "name": "Paris",
+      "type": "inland",
+      "supply_center": true,
+      "neighbors": ["PIC", "BUR", "GAS", "BRE"]
+    },
+    {
+      "id": "RUR",
+      "name": "Ruhr",
+      "type": "inland",
+      "supply_center": false,
+      "neighbors": ["BEL", "KIE", "MUN", "BUR"]
+    },
+    {
+      "id": "SER",
+      "name": "Serbia",
+      "type": "inland",
+      "supply_center": true,
+      "neighbors": ["TRI", "BUD", "BUC", "BUL", "MAC", "ALB"]
+    },
+    {
+      "id": "SIL",
+      "name": "Silesia",
+      "type": "inland",
+      "supply_center": false,
+      "neighbors": ["BER", "WAR", "GAL", "BOH", "MUN"]
+    },
+    {
+      "id": "TYR",
+      "name": "Tyrolia",
+      "type": "inland",
+      "supply_center": false,
+      "neighbors": ["MUN", "VIE", "TRI", "VEN", "PIE"]
+    },
+    {
+      "id": "UKR",
+      "name": "Ukraine",
+      "type": "inland",
+      "supply_center": false,
+      "neighbors": ["WAR", "MOS", "SEV", "BUC", "GAL"]
+    },
+    {
+      "id": "VIE",
+      "name": "Vienna",
+      "type": "inland",
+      "supply_center": true,
+      "neighbors": ["TYR", "BOH", "GAL", "BUD", "TRI"]
+    },
+    {
+      "id": "WAR",
+      "name": "Warsaw",
+      "type": "inland",
+      "supply_center": true,
+      "neighbors": ["SIL", "PRU", "LIV", "MOS", "UKR", "GAL"]
+    },
+    {
+      "id": "ALB",
+      "name": "Albania",
+      "type": "coastal",
+      "supply_center": false,
+      "neighbors": ["TRI", "SER", "MAC", "GRE", "ION", "ADR"]
+    },
+    {
+      "id": "ANK",
+      "name": "Ankara",
+      "type": "coastal",
+      "supply_center": true,
+      "neighbors": ["BLA", "ARM", "SMY", "CON"]
+    },
+    {
+      "id": "ARM",
+      "name": "Armenia",
+      "type": "coastal",
+      "supply_center": false,
+      "neighbors": ["SEV", "BLA", "ANK", "SMY", "SYR"]
+    },
+    {
+      "id": "BEL",
+      "name": "Belgium",
+      "type": "coastal",
+      "supply_center": true,
+      "neighbors": ["ENG", "NTH", "HOL", "RUR", "BUR", "PIC"]
+    },
+    {
+      "id": "BER",
+      "name": "Berlin",
+      "type": "coastal",
+      "supply_center": true,
+      "neighbors": ["BAL", "PRU", "SIL", "MUN", "KIE"]
+    },
+    {
+      "id": "BRE",
+      "name": "Brest",
+      "type": "coastal",
+      "supply_center": true,
+      "neighbors": ["ENG", "MAO", "GAS", "PAR", "PIC"]
+    },
+    {
+      "id": "CON",
+      "name": "Constantinople",
+      "type": "coastal",
+      "supply_center": true,
+      "neighbors": ["BUL", "BLA", "ANK", "SMY", "AEG"]
+    },
+    {
+      "id": "DEN",
+      "name": "Denmark",
+      "type": "coastal",
+      "supply_center": true,
+      "neighbors": ["NTH", "SKA", "BAL", "KIE", "HEL"]
+    },
+    {
+      "id": "EDI",
+      "name": "Edinburgh",
+      "type": "coastal",
+      "supply_center": true,
+      "neighbors": ["NWG", "NTH", "YOR", "CLY"]
+    },
+    {
+      "id": "FIN",
+      "name": "Finland",
+      "type": "coastal",
+      "supply_center": false,
+      "neighbors": ["BOT", "STP", "SWE", "NWG"]
+    },
+    {
+      "id": "GAS",
+      "name": "Gascony",
+      "type": "coastal",
+      "supply_center": false,
+      "neighbors": ["MAO", "BRE", "PAR", "BUR", "MAR", "SPA"]
+    },
+    {
+      "id": "GRE",
+      "name": "Greece",
+      "type": "coastal",
+      "supply_center": true,
+      "neighbors": ["ALB", "MAC", "BUL", "AEG", "ION"]
+    },
+    {
+      "id": "HOL",
+      "name": "Holland",
+      "type": "coastal",
+      "supply_center": true,
+      "neighbors": ["NTH", "HEL", "KIE", "RUR", "BEL"]
+    },
+    {
+      "id": "KIE",
+      "name": "Kiel",
+      "type": "coastal",
+      "supply_center": true,
+      "neighbors": ["HEL", "DEN", "BAL", "BER", "MUN", "RUR", "HOL"]
+    },
+    {
+      "id": "LIV",
+      "name": "Livonia",
+      "type": "coastal",
+      "supply_center": false,
+      "neighbors": ["BAL", "BOT", "STP", "MOS", "WAR", "PRU"]
+    },
+    {
+      "id": "LVP",
+      "name": "Liverpool",
+      "type": "coastal",
+      "supply_center": true,
+      "neighbors": ["NAO", "CLY", "YOR", "WAL", "IRI"]
+    },
+    {
+      "id": "LON",
+      "name": "London",
+      "type": "coastal",
+      "supply_center": true,
+      "neighbors": ["NTH", "ENG", "WAL", "YOR"]
+    },
+    {
+      "id": "MAC",
+      "name": "Macedonia",
+      "type": "coastal",
+      "supply_center": false,
+      "neighbors": ["ALB", "SER", "BUL", "GRE"]
+    },
+    {
+      "id": "MAR",
+      "name": "Marseille",
+      "type": "coastal",
+      "supply_center": true,
+      "neighbors": ["BUR", "MUN", "PIE", "GOL", "SPA", "GAS"]
+    },
+    {
+      "id": "NAF",
+      "name": "North Africa",
+      "type": "coastal",
+      "supply_center": false,
+      "neighbors": ["MAO", "WES", "TUN"]
+    },
+    {
+      "id": "NAP",
+      "name": "Naples",
+      "type": "coastal",
+      "supply_center": true,
+      "neighbors": ["ROM", "APU", "ION", "TYS"]
+    },
+    {
+      "id": "NOR",
+      "name": "Norway",
+      "type": "coastal",
+      "supply_center": true,
+      "neighbors": ["NWG", "BAR", "STP", "SWE", "SKA", "NTH"]
+    },
+    {
+      "id": "PIC",
+      "name": "Picardy",
+      "type": "coastal",
+      "supply_center": false,
+      "neighbors": ["ENG", "BEL", "BUR", "PAR", "BRE"]
+    },
+    {
+      "id": "PIE",
+      "name": "Piedmont",
+      "type": "coastal",
+      "supply_center": false,
+      "neighbors": ["TYR", "VEN", "TYS", "GOL", "MAR"]
+    },
+    {
+      "id": "PRU",
+      "name": "Prussia",
+      "type": "coastal",
+      "supply_center": false,
+      "neighbors": ["BAL", "LIV", "WAR", "BER"]
+    },
+    {
+      "id": "ROM",
+      "name": "Rome",
+      "type": "coastal",
+      "supply_center": true,
+      "neighbors": ["TYS", "TUS", "PIE", "VEN", "APU", "NAP"]
+    },
+    {
+      "id": "SEV",
+      "name": "Sevastopol",
+      "type": "coastal",
+      "supply_center": true,
+      "neighbors": ["UKR", "MOS", "ARM", "BLA", "BUC"]
+    },
+    {
+      "id": "SMY",
+      "name": "Smyrna",
+      "type": "coastal",
+      "supply_center": true,
+      "neighbors": ["CON", "ANK", "ARM", "SYR", "EAS", "AEG"]
+    },
+    {
+      "id": "SWE",
+      "name": "Sweden",
+      "type": "coastal",
+      "supply_center": true,
+      "neighbors": ["NOR", "FIN", "BOT", "BAL", "SKA"]
+    },
+    {
+      "id": "SYR",
+      "name": "Syria",
+      "type": "coastal",
+      "supply_center": false,
+      "neighbors": ["ARM", "SMY", "EAS"]
+    },
+    {
+      "id": "TRI",
+      "name": "Trieste",
+      "type": "coastal",
+      "supply_center": true,
+      "neighbors": ["TYR", "VIE", "BUD", "SER", "ALB", "ADR", "VEN"]
+    },
+    {
+      "id": "TUN",
+      "name": "Tunis",
+      "type": "coastal",
+      "supply_center": true,
+      "neighbors": ["WES", "TYS", "ION", "NAF"]
+    },
+    {
+      "id": "TUS",
+      "name": "Tuscany",
+      "type": "coastal",
+      "supply_center": false,
+      "neighbors": ["PIE", "VEN", "ROM", "TYS", "GOL"]
+    },
+    {
+      "id": "WAL",
+      "name": "Wales",
+      "type": "coastal",
+      "supply_center": false,
+      "neighbors": ["IRI", "LVP", "YOR", "LON", "ENG"]
+    },
+    {
+      "id": "YOR",
+      "name": "Yorkshire",
+      "type": "coastal",
+      "supply_center": false,
+      "neighbors": ["EDI", "NTH", "LON", "WAL", "LVP"]
+    },
+    {
+      "id": "BUL",
+      "name": "Bulgaria",
+      "type": "split_coastal",
+      "supply_center": true,
+      "neighbors_land": ["MAC", "SER", "BUC", "CON"],
+      "coasts": [
+        {
+          "id": "nc",
+          "name": "North Coast",
+          "neighbors": ["BUC", "CON", "BLA"]
+        },
+        {
+          "id": "sc",
+          "name": "South Coast",
+          "neighbors": ["MAC", "CON", "AEG", "GRE"]
+        }
+      ]
+    },
+    {
+      "id": "SPA",
+      "name": "Spain",
+      "type": "split_coastal",
+      "supply_center": true,
+      "neighbors_land": ["POR", "GAS", "MAR"],
+      "coasts": [
+        {
+          "id": "nc",
+          "name": "North Coast",
+          "neighbors": ["GAS", "MAO", "POR"]
+        },
+        {
+          "id": "sc",
+          "name": "South Coast",
+          "neighbors": ["POR", "MAO", "WES", "GOL", "MAR"]
+        }
+      ]
+    },
+    {
+      "id": "STP",
+      "name": "St. Petersburg",
+      "type": "split_coastal",
+      "supply_center": true,
+      "neighbors_land": ["NOR", "FIN", "LIV", "MOS"],
+      "coasts": [
+        {
+          "id": "nc",
+          "name": "North Coast",
+          "neighbors": ["BAR", "NWG", "NOR"]
+        },
+        {
+          "id": "sc",
+          "name": "South Coast",
+          "neighbors": ["FIN", "BOT", "LIV"]
+        }
+      ]
+    },
+    {
+
+"id": "ADR",
+"name": "Adriatic Sea",
+"type": "sea",
+"supply_center": false,
+"neighbors": ["VEN", "TRI", "ALB", "ION"]
+},
+{
+"id": "AEG",
+"name": "Aegean Sea",
+"type": "sea",
+"supply_center": false,
+"neighbors": ["GRE", "BUL/sc", "CON", "SMY", "EAS", "ION"]
+},
+{
+"id": "BAL",
+"name": "Baltic Sea",
+"type": "sea",
+"supply_center": false,
+"neighbors": ["DEN", "SWE", "BOT", "LIV", "PRU", "BER", "KIE"]
+},
+{
+"id": "BAR",
+"name": "Barents Sea",
+"type": "sea",
+"supply_center": false,
+"neighbors": ["NWG", "NOR", "STP/nc"]
+},
+{
+"id": "BLA",
+"name": "Black Sea",
+"type": "sea",
+"supply_center": false,
+"neighbors": ["SEV", "ARM", "ANK", "CON", "BUL/nc", "BUC"]
+},
+{
+"id": "BOT",
+"name": "Gulf of Bothnia",
+"type": "sea",
+"supply_center": false,
+"neighbors": ["FIN", "STP/sc", "LIV", "BAL", "SWE"]
+},
+{
+"id": "EAS",
+"name": "Eastern Mediterranean",
+"type": "sea",
+"supply_center": false,
+"neighbors": ["ION", "AEG", "SMY", "SYR"]
+},
+{
+"id": "ENG",
+"name": "English Channel",
+"type": "sea",
+"supply_center": false,
+"neighbors": ["MAO", "IRI", "WAL", "LON", "NTH", "BEL", "PIC", "BRE"]
+},
+{
+"id": "GOL",
+"name": "Gulf of Lyon",
+"type": "sea",
+"supply_center": false,
+"neighbors": ["SPA/sc", "MAR", "PIE", "TUS", "TYS", "WES"]
+},
+{
+"id": "HEL",
+"name": "Helgoland Bight",
+"type": "sea",
+"supply_center": false,
+"neighbors": ["NTH", "DEN", "KIE", "HOL"]
+},
+{
+"id": "ION",
+"name": "Ionian Sea",
+"type": "sea",
+"supply_center": false,
+"neighbors": ["TUN", "TYS", "NAP", "APU", "ADR", "ALB", "GRE", "AEG", "EAS"]
+},
+{
+"id": "IRI",
+"name": "Irish Sea",
+"type": "sea",
+"supply_center": false,
+"neighbors": ["NAO", "LVP", "WAL", "ENG", "MAO"]
+},
+{
+"id": "MAO",
+"name": "Mid-Atlantic Ocean",
+"type": "sea",
+"supply_center": false,
+"neighbors": ["NAO", "IRI", "ENG", "BRE", "GAS", "SPA/nc", "SPA/sc", "POR", "WES", "NAF"]
+},
+{
+"id": "NAO",
+"name": "North Atlantic Ocean",
+"type": "sea",
+"supply_center": false,
+"neighbors": ["NWG", "CLY", "LVP", "IRI", "MAO"]
+},
+{
+"id": "NTH",
+"name": "North Sea",
+"type": "sea",
+"supply_center": false,
+"neighbors": ["NWG", "NOR", "SKA", "DEN", "HEL", "HOL", "BEL", "PIC", "LON", "YOR", "EDI"]
+},
+{
+"id": "NWG",
+"name": "Norwegian Sea",
+"type": "sea",
+"supply_center": false,
+"neighbors": ["BAR", "NOR", "NTH", "EDI", "CLY", "NAO"]
+},
+{
+"id": "SKA",
+"name": "Skagerrak",
+"type": "sea",
+"supply_center": false,
+"neighbors": ["NOR", "SWE", "BAL", "DEN", "NTH"]
+},
+{
+"id": "TYS",
+"name": "Tyrrhenian Sea",
+"type": "sea",
+"supply_center": false,
+"neighbors": ["WES", "GOL", "TUS", "ROM", "NAP", "ION", "TUN"]
+},
+{
+"id": "WES",
+"name": "Western Mediterranean",
+"type": "sea",
+"supply_center": false,
+"neighbors": ["MAO", "SPA/sc", "GOL", "TYS", "TUN", "NAF"]
+}
+]
+}
+
+
+
+
+
