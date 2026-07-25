@@ -23,36 +23,33 @@ export default function OrderPanel(props: OrderPanelProps) {
   return (
     <Panel title={`Your Orders · ${ordered}/${units.length}`} icon={<Swords size={13} />}>
       {selectedUnit ? (
-        <div className="mb-3 rounded-lg border border-amber-400/30 bg-amber-400/10 p-3">
-          <div className="mb-2 flex items-center justify-between">
+        <div className="mb-3.5 rounded-lg border border-amber-400/30 bg-amber-400/5 p-3.5 shadow-lg shadow-amber-950/20">
+          <div className="mb-2.5 flex items-center justify-between">
             <span className="flex items-center gap-2 text-sm font-semibold text-amber-100">
               <UnitToken type={selectedUnit.type} power={selectedUnit.power} />
-              {provName(selectedUnit.loc)}
+              <span className="font-display tracking-wide">{provName(selectedUnit.loc)}</span>
             </span>
             <button
               onClick={() => props.onSelect(null)}
-              className="rounded p-1 text-slate-500 transition hover:bg-white/10 hover:text-slate-300"
+              className="rounded-full p-1 text-slate-500 transition hover:bg-white/10 hover:text-slate-300"
               aria-label="Deselect"
             >
               <X size={14} />
             </button>
           </div>
-          {pendingMode ? (
-            <p className="text-xs font-medium leading-relaxed text-cyan-200">
-              {pendingMode === "move"
-                ? "Click a highlighted province on the map to march there."
-                : "Click a highlighted neighbouring unit to lend it support."}
-            </p>
-          ) : (
-            <div className="grid grid-cols-3 gap-1.5">
-              <OrderButton onClick={props.onHold} icon={<Hand size={14} />} label="Hold" tone="slate" />
-              <OrderButton onClick={props.onMove} icon={<ArrowRight size={14} />} label="Move" tone="amber" />
-              <OrderButton onClick={props.onSupport} icon={<LifeBuoy size={14} />} label="Support" tone="cyan" />
-            </div>
-          )}
+          <p className="mb-2 text-[11px] font-medium leading-relaxed text-amber-200/90">
+            {pendingMode === "support"
+              ? "Click a highlighted unit or province on the map to support it."
+              : "Click any highlighted neighbouring province on the map to move directly:"}
+          </p>
+          <div className="grid grid-cols-3 gap-2">
+            <OrderButton onClick={props.onHold} icon={<Hand size={14} />} label="Hold" tone="slate" />
+            <OrderButton onClick={props.onMove} icon={<ArrowRight size={14} />} label="Move" tone="amber" />
+            <OrderButton onClick={props.onSupport} icon={<LifeBuoy size={14} />} label="Support" tone="cyan" />
+          </div>
         </div>
       ) : (
-        <p className="mb-3 rounded-lg bg-black/20 p-3 text-xs leading-relaxed text-slate-400">
+        <p className="mb-3.5 rounded-lg bg-black/30 border border-white/[0.03] p-3 text-[11px] leading-relaxed text-slate-400">
           Select a unit below or on the map. Unordered units hold their ground.{" "}
           <span className="font-semibold text-amber-200/90">Support</span> reinforces a neighbouring
           unit — offensively if it attacks, defensively if it is attacked.
@@ -67,15 +64,15 @@ export default function OrderPanel(props: OrderPanelProps) {
             <li key={u.id}>
               <button
                 onClick={() => props.onSelect(sel ? null : u.id)}
-                className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm transition ${
+                className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm transition-all duration-200 ${
                   sel
-                    ? "border-amber-400/60 bg-amber-400/10"
-                    : "border-white/10 bg-black/20 hover:border-white/25"
+                    ? "border-amber-400/50 bg-amber-400/10 shadow-md shadow-amber-950/20"
+                    : "border-[#443c30]/50 bg-[#14120f]/40 hover:border-[#a08c60]/35 hover:bg-[#14120f]/70"
                 }`}
               >
                 <span className="flex items-center gap-2 font-medium text-slate-200">
                   <UnitToken type={u.type} power={u.power} />
-                  {provName(u.loc)}
+                  <span className="text-[12.5px] font-semibold">{provName(u.loc)}</span>
                 </span>
                 <OrderBadge order={o} />
               </button>
@@ -105,16 +102,16 @@ interface OrderButtonProps {
 
 function OrderButton({ onClick, icon, label, tone }: OrderButtonProps) {
   const tones = {
-    slate: "bg-slate-600/80 hover:bg-slate-500/80",
-    amber: "bg-amber-600/90 hover:bg-amber-500/90 text-[#241a05]",
-    cyan: "bg-cyan-700/80 hover:bg-cyan-600/80",
+    slate: "bg-slate-800/80 hover:bg-slate-700/95 text-slate-100 border border-slate-700/50",
+    amber: "bg-amber-600/90 hover:bg-amber-500 text-amber-950 font-extrabold border border-amber-500/40",
+    cyan: "bg-cyan-800/80 hover:bg-cyan-700 text-cyan-100 border border-cyan-700/50",
   };
   return (
     <button
       onClick={onClick}
-      className={`flex flex-col items-center gap-1 rounded-lg px-2 py-2 text-[11px] font-bold text-white transition ${tones[tone]}`}
+      className={`flex flex-col items-center justify-center gap-1.5 rounded-lg px-2.5 py-2.5 text-[10.5px] font-bold uppercase tracking-wider transition-all duration-200 active:scale-95 shadow-sm ${tones[tone]}`}
     >
-      {icon}
+      <span className="opacity-90">{icon}</span>
       {label}
     </button>
   );
@@ -123,12 +120,12 @@ function OrderButton({ onClick, icon, label, tone }: OrderButtonProps) {
 function OrderBadge({ order }: { order?: Order }) {
   const type = order?.type ?? "hold";
   const styles: Record<string, string> = {
-    hold: "bg-slate-600/60 text-slate-200",
-    move: "bg-amber-500/90 text-[#241a05]",
-    support: "bg-cyan-600/80 text-white",
+    hold: "bg-slate-800/80 text-slate-300 border border-slate-700/40",
+    move: "bg-amber-600/90 text-[#1c1404] font-extrabold border border-amber-500/35",
+    support: "bg-cyan-900/85 text-cyan-200 border border-cyan-700/40",
   };
   return (
-    <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${styles[type]}`}>
+    <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${styles[type]}`}>
       {orderText(order)}
     </span>
   );

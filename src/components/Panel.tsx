@@ -11,13 +11,19 @@ export default function Panel({ title, icon, children }: PanelProps) {
     <motion.section
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      className="rounded-xl border border-white/10 bg-[#2c2822] p-4 shadow-xl"
+      className="relative overflow-hidden rounded-xl border border-white/10 bg-[#1a1713]/70 backdrop-blur-md p-4 shadow-2xl"
     >
-      <h2 className="mb-3 flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.22em] text-amber-200/80">
-        {icon}
+      {/* Decorative top gold line */}
+      <div className="absolute top-0 inset-x-4 h-[1px] bg-gradient-to-r from-transparent via-[#a08c60]/50 to-transparent" />
+      
+      <h2 className="mb-3.5 flex items-center gap-2 font-display text-[10.5px] font-bold uppercase tracking-[0.22em] text-amber-200/95">
+        <span className="text-amber-400/90">{icon}</span>
         {title}
       </h2>
-      {children}
+      
+      <div className="relative z-10">
+        {children}
+      </div>
     </motion.section>
   );
 }

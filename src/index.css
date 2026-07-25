@@ -1,8 +1,9 @@
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;800;900&family=Inter:wght@300;400;500;600;700;800&display=swap');
 @import "tailwindcss";
 
-/* ------------------------------------------------------------------ fonts */
-.font-display {
-  font-family: "Cinzel", "Times New Roman", Georgia, serif;
+@theme {
+  --font-display: "Cinzel", "Times New Roman", Georgia, serif;
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
 }
 
 body {

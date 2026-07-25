@@ -1,0 +1,36 @@
+{
+  "name": "vizdip",
+  "version": "0.3.0",
+  "main": "target/src/vizdip.js",
+  "types": "./target/interface/vizdip.d.ts",
+  "scripts": {
+    "prepublish": "gulp compile-src"
+  },
+  "description": "",
+  "repository": {
+    "type": "git",
+    "url": "git@github-karmami:KarmaMi/vizdip.git"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@alrra/travis-scripts": "^3.0.1",
+    "@types/react": "^15.0.14",
+    "@types/react-dom": "^0.14.23",
+    "browserify": "^14.0.0",
+    "gulp": "^3.9.1",
+    "gulp-sourcemaps": "^2.4.1",
+    "gulp-typedoc": "^2.0.2",
+    "gulp-typescript": "^3.1.4 ",
+    "merge2": "^1.0.3",
+    "react-dom": "^15.4.2",
+    "tsify": "^3.0.1",
+    "typedoc": "^0.5.5",
+    "typescript": "^2.1.6",
+    "vinyl-buffer": "^1.0.0",
+    "vinyl-source-stream": "^1.1.0"
+  },
+  "dependencies": {
+    "js-diplomacy": "0.1.5",
+    "react": "^15.4.2"
+  }
+}
