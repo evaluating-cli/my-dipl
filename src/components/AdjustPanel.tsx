@@ -2,7 +2,7 @@ import { motion } from "framer-motion";
 import { Plus, X, Minus, ArrowRight, Landmark } from "lucide-react";
 import UnitToken from "./UnitToken";
 import Panel from "./Panel";
-import { PROVINCE_MAP, type UnitType } from "../data/map";
+import { PROVINCE_MAP, provinceId, type UnitType } from "../data/map";
 import { provName, type Unit, type ValidationError } from "../game/engine";
 
 interface AdjustPanelProps {
@@ -53,8 +53,8 @@ export default function AdjustPanel(props: AdjustPanelProps) {
           ) : (
             <ul className="space-y-1.5">
               {centers.map((c) => {
-                const built = builds.find((b) => b.loc === c);
-                const coastal = PROVINCE_MAP[c].coast;
+                const built = builds.find((b) => provinceId(b.loc) === c);
+                const coastal = PROVINCE_MAP[c].fleetAdj.length > 0;
                 return (
                   <li
                     key={c}
@@ -63,7 +63,7 @@ export default function AdjustPanel(props: AdjustPanelProps) {
                     <span className="text-[12.5px] font-semibold text-slate-200">{provName(c)}</span>
                     {built ? (
                       <button
-                        onClick={() => props.onRemoveBuild(c)}
+                        onClick={() => props.onRemoveBuild(built.loc)}
                         className="flex items-center gap-1.5 text-xs font-bold text-rose-300 transition hover:text-rose-200"
                       >
                         <UnitToken type={built.type} power={units[0]?.power ?? "NEU"} size={16} />
@@ -82,7 +82,7 @@ export default function AdjustPanel(props: AdjustPanelProps) {
                         </button>}
                         {coastal && props.buildTypesByCenter[c]?.includes("F") && (
                           <button
-                            onClick={() => props.onBuild({ type: "F", loc: c })}
+                            onClick={() => props.onBuild({ type: "F", loc: c === "STP" ? "STP/SC" : c })}
                             disabled={builds.length >= canBuild}
                             className="flex items-center gap-1 rounded-md bg-cyan-900 border border-cyan-800/40 px-2 py-1.5 text-[10.5px] font-bold text-cyan-100 transition hover:bg-cyan-800 disabled:opacity-30"
                           >

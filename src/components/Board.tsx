@@ -1,6 +1,7 @@
 import { SeaNode, LandNode, UnitNode } from "./MapNodes";
 import { useMemo, useState, useRef, useEffect, useCallback } from "react";
 import {
+  COAST_LOCATIONS,
   POWER_MAP,
   PROVINCE_MAP,
   PROVINCES,
@@ -255,7 +256,7 @@ export default function Board(props: BoardProps) {
     const seen = new Set<string>();
     const list: { from: Province; to: Province; kind: "land" | "sea" | "coastal"; key: string }[] = [];
     for (const p of PROVINCES) {
-      for (const adjId of p.adj) {
+      for (const adjId of [...p.armyAdj, ...p.fleetAdj]) {
         const target = PROVINCE_MAP[adjId];
         if (target) {
           const pair = [p.id, target.id].sort();
@@ -476,6 +477,26 @@ export default function Board(props: BoardProps) {
           ))}
         </g>
 
+        {/* Named coast locations are separate fleet destinations, but share
+            ownership and occupation with their parent province. */}
+        <g>
+          {COAST_LOCATIONS.map((coast) => {
+            const p = PROVINCE_MAP[coast.id];
+            return <SeaNode
+              key={coast.id}
+              p={p}
+              isHover={hoverId === coast.id}
+              isMoveT={highlightMove.has(coast.id)}
+              isSupT={highlightSupport.has(coast.id)}
+              hasUnit={!!unitsByLoc[coast.id]}
+              zoomScale={zoomScale}
+              onEnter={() => setHoverId(coast.id)}
+              onLeave={() => setHoverId((id) => id === coast.id ? null : id)}
+              onClick={() => handleProvince(coast.id)}
+            />;
+          })}
+        </g>
+
         {/* ---- order arrows ---- */}
         <g style={{ pointerEvents: "none" }}>
           {ordersArr.map(({ u, o }) => {
@@ -549,7 +570,7 @@ export default function Board(props: BoardProps) {
           <div>
             <p className="font-display text-[13px] font-bold tracking-wide text-[#3a3428]">{hover.name}</p>
             <p className="mt-0.5 text-[11px] text-[#6b6350]">
-              {hover.kind === "sea" ? "Open water" : hover.coast ? "Coastal province" : "Inland province"}
+              {hover.kind === "sea" ? "Open water" : hover.fleetAdj.length > 0 ? "Coastal province" : "Inland province"}
               {hover.supply === "home" && ` · Home centre of ${POWER_MAP[hover.owner!].name}`}
               {hover.supply === "neutral" && " · Neutral supply centre"}
             </p>

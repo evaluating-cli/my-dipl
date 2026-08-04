@@ -5,6 +5,8 @@ import {
   PROVINCE_MAP,
   PROVINCES,
   STARTING_UNITS,
+  coastLocation,
+  provinceId,
   WIN_CENTERS,
   type PowerId,
   type UnitType,
@@ -80,35 +82,24 @@ export interface GameState {
   defeat?: boolean;
 }
 
-export const provName = (id: string) => PROVINCE_MAP[id]?.name ?? id;
+export const provName = (id: string) => coastLocation(id)?.name ?? PROVINCE_MAP[provinceId(id)]?.name ?? id;
 export const powerName = (id: PowerId) => POWER_MAP[id]?.name ?? id;
 
 // ---------------------------------------------------------------------------
-// Adjacency (symmetrised — each province only lists forward links)
+// Unit-specific topology
 // ---------------------------------------------------------------------------
-const ADJ: Record<string, Set<string>> = {};
-for (const p of PROVINCES) ADJ[p.id] = new Set(p.adj);
-for (const p of PROVINCES) {
-  for (const n of p.adj) {
-    if (ADJ[n]) ADJ[n].add(p.id);
-  }
+export function neighbours(id: string, type: UnitType = "A"): string[] {
+  if (type === "F") return coastLocation(id)?.fleetAdj ?? PROVINCE_MAP[id]?.fleetAdj ?? [];
+  return PROVINCE_MAP[provinceId(id)]?.armyAdj ?? [];
 }
 
-export function adjacent(a: string, b: string): boolean {
-  return ADJ[a]?.has(b) ?? false;
+export function adjacent(a: string, b: string, type: UnitType = "A"): boolean {
+  return neighbours(a, type).includes(b);
 }
 
-export function neighbours(id: string): string[] {
-  return Array.from(ADJ[id] ?? []);
-}
-
-/** Legal destinations for a unit (armies stay on land, fleets need water or coast). */
+/** Legal destinations, including named coast locations for fleets. */
 export function legalTargets(u: Unit): string[] {
-  return neighbours(u.loc).filter((id) => {
-    const t = PROVINCE_MAP[id];
-    if (u.type === "A") return t.kind === "land";
-    return t.coast;
-  });
+  return neighbours(u.loc, u.type).filter((id) => !PROVINCE_MAP[provinceId(id)]?.impassable);
 }
 
 /** Pure validation for a single movement-phase order. */
@@ -135,18 +126,18 @@ export function validateMovementOrder(
     if (typeof order.supportFrom !== "string") return fail({ code: "MISSING_TARGET", unitId: unit.id, message: "A support order requires a unit to support." });
     const destination = order.supportTo ?? order.supportFrom;
     if (!legalTargets(unit).includes(destination)) return fail({ code: "ILLEGAL_DESTINATION", unitId: unit.id, loc: destination, message: `${unitLabel(unit)} cannot support action in ${provName(destination)}.` });
-    if (!state.units.some((u) => u.loc === order.supportFrom)) return fail({ code: "NO_UNIT_TO_SUPPORT", unitId: unit.id, loc: order.supportFrom, message: `There is no unit in ${provName(order.supportFrom)} to support.` });
+    if (!state.units.some((u) => provinceId(u.loc) === provinceId(order.supportFrom!))) return fail({ code: "NO_UNIT_TO_SUPPORT", unitId: unit.id, loc: order.supportFrom, message: `There is no unit in ${provName(order.supportFrom)} to support.` });
     return { valid: true, value: { type: "support", supportFrom: order.supportFrom, supportTo: order.supportTo }, errors: [] };
   }
   return fail({ code: "INVALID_ORDER_TYPE", unitId: unit.id, message: "The order type is invalid." });
 }
 
 export function validMoveTargets(state: GameState, unit: Unit): string[] {
-  return neighbours(unit.loc).filter((to) => validateMovementOrder(state, unit, { type: "move", to }).valid);
+  return neighbours(unit.loc, unit.type).filter((to) => validateMovementOrder(state, unit, { type: "move", to }).valid);
 }
 
 export function validSupportTargets(state: GameState, unit: Unit): string[] {
-  return neighbours(unit.loc).filter((supportFrom) => validateMovementOrder(state, unit, { type: "support", supportFrom }).valid);
+  return neighbours(unit.loc, unit.type).filter((supportFrom) => validateMovementOrder(state, unit, { type: "support", supportFrom }).valid);
 }
 
 /** Invalid, missing, and foreign order keys are harmless: every affected unit holds. */
@@ -240,11 +231,11 @@ interface ValidSupport { supporter: Unit; order: Order }
 
 /** Return only supports that match the order being supported and are in range. */
 function validateSupports(units: Unit[], orders: Record<string, Order>): ValidSupport[] {
-  const unitAt = new Map(units.map((unit) => [unit.loc, unit]));
+  const unitAt = new Map(units.map((unit) => [provinceId(unit.loc), unit]));
   return units.flatMap((supporter) => {
     const order = orders[supporter.id];
     if (order.type !== "support" || !order.supportFrom) return [];
-    const supported = unitAt.get(order.supportFrom);
+    const supported = unitAt.get(provinceId(order.supportFrom));
     if (!supported) return [];
     const destination = order.supportTo ?? supported.loc;
     if (!legalTargets(supporter).includes(destination)) return [];
@@ -265,8 +256,8 @@ function findCutSupports(
     const exemptProvince = order.supportTo ?? order.supportFrom;
     if (units.some((attacker) => {
       const attack = orders[attacker.id];
-      return attack.type === "move" && attack.to === supporter.loc &&
-        attacker.power !== supporter.power && attacker.loc !== exemptProvince;
+      return attack.type === "move" && provinceId(attack.to!) === provinceId(supporter.loc) &&
+        attacker.power !== supporter.power && provinceId(attacker.loc) !== provinceId(exemptProvince!);
     })) cut.add(supporter.id);
   }
   return cut;
@@ -275,12 +266,12 @@ function findCutSupports(
 function calculateStrengths(
   units: Unit[], orders: Record<string, Order>, supports: ValidSupport[], cut: ReadonlySet<string>,
 ): { attack: Map<string, number>; defence: Map<string, number> } {
-  const unitAt = new Map(units.map((unit) => [unit.loc, unit]));
+  const unitAt = new Map(units.map((unit) => [provinceId(unit.loc), unit]));
   const attack = new Map(units.map((unit) => [unit.id, orders[unit.id].type === "move" ? 1 : 0]));
   const defence = new Map(units.map((unit) => [unit.id, 1]));
   for (const { supporter, order } of supports) {
     if (cut.has(supporter.id)) continue;
-    const supported = unitAt.get(order.supportFrom!);
+    const supported = unitAt.get(provinceId(order.supportFrom!));
     if (!supported) continue;
     if (order.supportTo) attack.set(supported.id, (attack.get(supported.id) ?? 0) + 1);
     else defence.set(supported.id, (defence.get(supported.id) ?? 1) + 1);
@@ -295,7 +286,7 @@ function resolveDestinationContests(
   const attacks = new Map<string, Unit[]>();
   for (const unit of units) {
     const order = orders[unit.id];
-    if (order.type === "move" && order.to) attacks.set(order.to, [...(attacks.get(order.to) ?? []), unit]);
+    if (order.type === "move" && order.to) attacks.set(provinceId(order.to), [...(attacks.get(provinceId(order.to)) ?? []), unit]);
   }
   const winners = new Map<string, Unit>();
   const standoffs = new Set<string>();
@@ -334,7 +325,7 @@ function resolveMoveDependencies(
   units: Unit[], orders: Record<string, Order>, winners: ReadonlyMap<string, Unit>,
   attack: ReadonlyMap<string, number>, defence: ReadonlyMap<string, number>,
 ): MovementDecision {
-  const unitAt = new Map(units.map((unit) => [unit.loc, unit]));
+  const unitAt = new Map(units.map((unit) => [provinceId(unit.loc), unit]));
   const status = new Map<string, boolean>();
   const resolution = new Map<string, MoveResolution>();
   const path: Unit[] = [];
@@ -355,19 +346,19 @@ function resolveMoveDependencies(
       return true;
     }
     const order = orders[unit.id];
-    if (order.type !== "move" || !order.to || winners.get(order.to)?.id !== unit.id) {
+    if (order.type !== "move" || !order.to || winners.get(provinceId(order.to))?.id !== unit.id) {
       status.set(unit.id, false);
       resolution.set(unit.id, "contested");
       return false;
     }
     pathIndex.set(unit.id, path.length);
     path.push(unit);
-    const holder = unitAt.get(order.to);
+    const holder = unitAt.get(provinceId(order.to));
     let succeeds = !holder;
     let reason: MoveResolution = "vacant";
     if (holder) {
       const holderOrder = orders[holder.id];
-      const headToHead = holderOrder.type === "move" && holderOrder.to === unit.loc;
+      const headToHead = holderOrder.type === "move" && provinceId(holderOrder.to!) === provinceId(unit.loc);
       if (headToHead) {
         succeeds = holder.power !== unit.power && (attack.get(unit.id) ?? 1) > (attack.get(holder.id) ?? 1);
         reason = holder.power === unit.power ? "self-dislodgement" : "head-to-head";
@@ -422,7 +413,7 @@ export function resolveMovement(
   const units = state.units;
   orders = normalizeMovementOrders(state, orders);
   const events: string[] = [];
-  const unitAt = new Map(units.map((unit) => [unit.loc, unit]));
+  const unitAt = new Map(units.map((unit) => [provinceId(unit.loc), unit]));
   const supports = validateSupports(units, orders);
   const cut = findCutSupports(units, orders, supports, forcedCuts);
   const strengths = calculateStrengths(units, orders, supports, cut);
@@ -439,9 +430,9 @@ export function resolveMovement(
       if (cut.has(supporter.id) || !dislodged.has(supporter.id)) return false;
       const attacker = units.find((candidate) => {
         const candidateOrder = orders[candidate.id];
-        return success.has(candidate.id) && candidateOrder.type === "move" && candidateOrder.to === supporter.loc;
+        return success.has(candidate.id) && candidateOrder.type === "move" && provinceId(candidateOrder.to!) === provinceId(supporter.loc);
       });
-      return !!attacker && attacker.loc === (order.supportTo ?? order.supportFrom);
+      return !!attacker && provinceId(attacker.loc) === provinceId((order.supportTo ?? order.supportFrom)!);
     })
     .map(({ supporter }) => supporter.id);
   if (newlyCut.length > 0) {
@@ -452,7 +443,7 @@ export function resolveMovement(
   for (const u of units) {
     const o = orders[u.id];
     if (o.type !== "move" || !o.to || !success.has(u.id)) continue;
-    const vacated = unitAt.get(o.to);
+    const vacated = unitAt.get(provinceId(o.to));
     if (vacated && dislodged.has(vacated.id)) {
       events.push(
         `${unitLabel(u)} storms ${provName(o.to)}, driving out the ${powerName(vacated.power)} ${vacated.type === "A" ? "army" : "fleet"}.`,
@@ -489,7 +480,7 @@ export function resolveMovement(
 
 /** Retreat destinations are evaluated against the board after movement. */
 export function legalRetreatDestinations(state: GameState, dislodged: DislodgedUnit): string[] {
-  const occupied = new Set(state.units.map((unit) => unit.loc));
+  const occupied = new Set(state.units.map((unit) => provinceId(unit.loc)));
   const prohibited = new Set(dislodged.prohibitedStandoffProvinces);
   return legalTargets(dislodged.unit).filter((loc) =>
     !occupied.has(loc) && loc !== dislodged.attackerOrigin && !prohibited.has(loc),
@@ -536,7 +527,7 @@ export function applyFallOwnership(state: GameState): {
   const centers = { ...state.centers };
   const changed: string[] = [];
   const unitAt: Record<string, Unit> = {};
-  for (const u of state.units) unitAt[u.loc] = u;
+  for (const u of state.units) unitAt[provinceId(u.loc)] = u;
 
   for (const id of Object.keys(centers)) {
     const p = PROVINCE_MAP[id];
@@ -581,7 +572,7 @@ function frontierDist(state: GameState, power: PowerId): Record<string, number> 
 
 export function generateAIOrders(state: GameState): Record<string, Order> {
   const orders: Record<string, Order> = {};
-  const occupied = new Set(state.units.map((u) => u.loc));
+  const occupied = new Set(state.units.map((u) => provinceId(u.loc)));
 
   for (const power of GREAT_POWERS) {
     if (power === state.human) continue;
@@ -644,7 +635,7 @@ export interface AdjustPlan {
 }
 
 export function emptyHomeCenters(state: GameState, power: PowerId): string[] {
-  const occupied = new Set(state.units.map((u) => u.loc));
+  const occupied = new Set(state.units.map((u) => provinceId(u.loc)));
   return (HOME_SUPPLY[power as Exclude<PowerId, "NEU">] ?? []).filter(
     (c) => state.centers[c] === power && !occupied.has(c),
   );
@@ -666,18 +657,18 @@ export function validateAdjustmentPlan(
   if (requireComplete && (plan.builds.length !== Math.min(allowedBuilds, emptyHomeCenters(state, power).length) || plan.disbands.length !== requiredDisbands)) {
     errors.push({ code: "INCOMPLETE_ADJUSTMENT", message: "The required winter adjustments have not all been selected." });
   }
-  const occupied = new Set(state.units.map((u) => u.loc));
+  const occupied = new Set(state.units.map((u) => provinceId(u.loc)));
   const buildLocs = new Set<string>();
   plan.builds.forEach((build, index) => {
     if (build.power !== power) errors.push({ code: "WRONG_POWER", index, loc: build.loc, message: "A build cannot be submitted for another power." });
-    if (buildLocs.has(build.loc)) errors.push({ code: "DUPLICATE_BUILD", index, loc: build.loc, message: `Only one unit may be built in ${provName(build.loc)}.` });
-    buildLocs.add(build.loc);
-    if (!(HOME_SUPPLY[power as Exclude<PowerId, "NEU">] ?? []).includes(build.loc) || state.centers[build.loc] !== power) {
+    if (buildLocs.has(provinceId(build.loc))) errors.push({ code: "DUPLICATE_BUILD", index, loc: build.loc, message: `Only one unit may be built in ${provName(build.loc)}.` });
+    buildLocs.add(provinceId(build.loc));
+    if (!(HOME_SUPPLY[power as Exclude<PowerId, "NEU">] ?? []).includes(provinceId(build.loc)) || state.centers[provinceId(build.loc)] !== power) {
       errors.push({ code: "INELIGIBLE_HOME_CENTER", index, loc: build.loc, message: `${provName(build.loc)} is not an eligible owned home centre.` });
     }
-    if (occupied.has(build.loc)) errors.push({ code: "OCCUPIED_CENTER", index, loc: build.loc, message: `${provName(build.loc)} is occupied.` });
+    if (occupied.has(provinceId(build.loc))) errors.push({ code: "OCCUPIED_CENTER", index, loc: build.loc, message: `${provName(build.loc)} is occupied.` });
     if (build.type !== "A" && build.type !== "F") errors.push({ code: "INVALID_UNIT_TYPE", index, loc: build.loc, message: "Unit type must be army or fleet." });
-    if (build.type === "F" && !PROVINCE_MAP[build.loc]?.coast) errors.push({ code: "FLEET_REQUIRES_COAST", index, loc: build.loc, message: `A fleet cannot be built in inland ${provName(build.loc)}.` });
+    if (build.type === "F" && !PROVINCE_MAP[provinceId(build.loc)]?.fleetAdj.length) errors.push({ code: "FLEET_REQUIRES_COAST", index, loc: build.loc, message: `A fleet cannot be built in inland ${provName(build.loc)}.` });
   });
   const ids = new Set<string>();
   plan.disbands.forEach((id, index) => {

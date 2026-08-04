@@ -25,8 +25,12 @@ export interface Province {
   id: string; // abbreviation shown on the map
   name: string; // full name
   kind: "land" | "sea";
-  /** coastal provinces (and all seas) can host fleets; inland land cannot */
-  coast: boolean;
+  /** Provinces reachable by an army from this province. */
+  armyAdj: string[];
+  /** Locations reachable by a fleet from this province or coast. */
+  fleetAdj: string[];
+  /** True only for Switzerland, which cannot contain or be traversed by a unit. */
+  impassable?: boolean;
   /** supply-centre status */
   supply?: "home" | "neutral";
   /** initial territorial owner (display tint) */
@@ -36,7 +40,15 @@ export interface Province {
   /** optional ellipse radii overrides for seas */
   rx?: number;
   ry?: number;
-  adj: string[];
+}
+
+export interface CoastLocation {
+  id: string;
+  province: string;
+  name: string;
+  fleetAdj: string[];
+  x: number;
+  y: number;
 }
 
 export const POWERS: PowerInfo[] = [
@@ -70,104 +82,156 @@ export const HOME_SUPPLY: Record<Exclude<PowerId, "NEU">, string[]> = {
 
 export const PROVINCES: Province[] = [
   // ---------------- AUSTRIA-HUNGARY ----------------
-  { id: "VIE", name: "Vienna", kind: "land", coast: false, supply: "home", owner: "AUS", x: 540, y: 571, adj: ["BUD", "GAL", "BOH", "TYR", "TRI"] },
-  { id: "BUD", name: "Budapest", kind: "land", coast: false, supply: "home", owner: "AUS", x: 571, y: 596, adj: ["VIE", "GAL", "RUM", "SER", "TRI"] },
-  { id: "TRI", name: "Trieste", kind: "land", coast: true, supply: "home", owner: "AUS", x: 534, y: 627, adj: ["VIE", "BUD", "TYR", "VEN", "ADR"] },
-  { id: "GAL", name: "Galicia", kind: "land", coast: false, owner: "AUS", x: 592, y: 551, adj: ["VIE", "BUD", "SIL", "WAR", "UKR", "RUM"] },
-  { id: "BOH", name: "Bohemia", kind: "land", coast: false, owner: "AUS", x: 517, y: 527, adj: ["VIE", "MUN", "SIL", "TYR", "GAL"] },
-  { id: "TYR", name: "Tyrolia", kind: "land", coast: false, owner: "AUS", x: 492, y: 571, adj: ["VIE", "TRI", "BOH", "MUN", "PIE", "VEN"] },
+  { id: "VIE", name: "Vienna", kind: "land", supply: "home", owner: "AUS", x: 540, y: 571, armyAdj: ["BUD", "GAL", "BOH", "TYR", "TRI"], fleetAdj: [] },
+  { id: "BUD", name: "Budapest", kind: "land", supply: "home", owner: "AUS", x: 571, y: 596, armyAdj: ["VIE", "GAL", "RUM", "SER", "TRI"], fleetAdj: [] },
+  { id: "TRI", name: "Trieste", kind: "land", supply: "home", owner: "AUS", x: 534, y: 627, armyAdj: ["VIE", "BUD", "TYR", "VEN"], fleetAdj: ["VEN", "ADR"] },
+  { id: "GAL", name: "Galicia", kind: "land", owner: "AUS", x: 592, y: 551, armyAdj: ["VIE", "BUD", "SIL", "WAR", "UKR", "RUM"], fleetAdj: [] },
+  { id: "BOH", name: "Bohemia", kind: "land", owner: "AUS", x: 517, y: 527, armyAdj: ["VIE", "MUN", "SIL", "TYR", "GAL"], fleetAdj: [] },
+  { id: "TYR", name: "Tyrolia", kind: "land", owner: "AUS", x: 492, y: 571, armyAdj: ["VIE", "TRI", "BOH", "MUN", "PIE", "VEN"], fleetAdj: [] },
 
   // ---------------- ENGLAND ----------------
-  { id: "LON", name: "London", kind: "land", coast: true, supply: "home", owner: "ENG", x: 346, y: 481, adj: ["LVP", "YOR", "WAL", "ENC", "NTH"] },
-  { id: "LVP", name: "Liverpool", kind: "land", coast: true, supply: "home", owner: "ENG", x: 284, y: 429, adj: ["EDI", "YOR", "LON", "WAL", "IRI", "NTH"] },
-  { id: "EDI", name: "Edinburgh", kind: "land", coast: true, supply: "home", owner: "ENG", x: 303, y: 395, adj: ["LVP", "YOR", "NWG", "NTH"] },
-  { id: "YOR", name: "Yorkshire", kind: "land", coast: true, owner: "ENG", x: 321, y: 453, adj: ["EDI", "LON", "WAL", "NTH", "LVP"] },
-  { id: "WAL", name: "Wales", kind: "land", coast: true, owner: "ENG", x: 298, y: 508, adj: ["LVP", "LON", "IRI", "ENC"] },
+  { id: "LON", name: "London", kind: "land", supply: "home", owner: "ENG", x: 346, y: 481, armyAdj: ["LVP", "YOR", "WAL"], fleetAdj: ["LVP", "YOR", "WAL", "ENC", "NTH"] },
+  { id: "LVP", name: "Liverpool", kind: "land", supply: "home", owner: "ENG", x: 284, y: 429, armyAdj: ["EDI", "YOR", "LON", "WAL"], fleetAdj: ["EDI", "YOR", "LON", "WAL", "IRI", "NTH"] },
+  { id: "EDI", name: "Edinburgh", kind: "land", supply: "home", owner: "ENG", x: 303, y: 395, armyAdj: ["LVP", "YOR"], fleetAdj: ["LVP", "YOR", "NWG", "NTH"] },
+  { id: "YOR", name: "Yorkshire", kind: "land", owner: "ENG", x: 321, y: 453, armyAdj: ["EDI", "LON", "WAL", "LVP"], fleetAdj: ["EDI", "LON", "WAL", "NTH", "LVP"] },
+  { id: "WAL", name: "Wales", kind: "land", owner: "ENG", x: 298, y: 508, armyAdj: ["LVP", "LON"], fleetAdj: ["LVP", "LON", "IRI", "ENC"] },
 
   // ---------------- FRANCE ----------------
-  { id: "PAR", name: "Paris", kind: "land", coast: false, supply: "home", owner: "FRA", x: 359, y: 573, adj: ["PIC", "BUR", "GAS"] },
-  { id: "BRE", name: "Brest", kind: "land", coast: true, supply: "home", owner: "FRA", x: 303, y: 559, adj: ["PIC", "PAR", "GAS", "ENC", "MAO"] },
-  { id: "MAR", name: "Marseilles", kind: "land", coast: true, supply: "home", owner: "FRA", x: 400, y: 629, adj: ["BUR", "PIE", "SPA", "GOL"] },
-  { id: "PIC", name: "Picardy", kind: "land", coast: true, owner: "FRA", x: 354, y: 531, adj: ["BRE", "PAR", "BEL", "ENC"] },
-  { id: "BUR", name: "Burgundy", kind: "land", coast: false, owner: "FRA", x: 395, y: 562, adj: ["PAR", "MAR", "GAS", "PIE", "RUH", "MUN", "PIC"] },
-  { id: "GAS", name: "Gascony", kind: "land", coast: true, owner: "FRA", x: 335, y: 624, adj: ["BRE", "PAR", "BUR", "SPA", "MAO"] },
+  { id: "PAR", name: "Paris", kind: "land", supply: "home", owner: "FRA", x: 359, y: 573, armyAdj: ["PIC", "BUR", "GAS"], fleetAdj: [] },
+  { id: "BRE", name: "Brest", kind: "land", supply: "home", owner: "FRA", x: 303, y: 559, armyAdj: ["PIC", "PAR", "GAS"], fleetAdj: ["PIC", "GAS", "ENC", "MAO"] },
+  { id: "MAR", name: "Marseilles", kind: "land", supply: "home", owner: "FRA", x: 400, y: 629, armyAdj: ["BUR", "PIE", "SPA"], fleetAdj: ["PIE", "SPA", "GOL"] },
+  { id: "PIC", name: "Picardy", kind: "land", owner: "FRA", x: 354, y: 531, armyAdj: ["BRE", "PAR", "BEL"], fleetAdj: ["BRE", "BEL", "ENC"] },
+  { id: "BUR", name: "Burgundy", kind: "land", owner: "FRA", x: 395, y: 562, armyAdj: ["PAR", "MAR", "GAS", "PIE", "RUH", "MUN", "PIC"], fleetAdj: [] },
+  { id: "GAS", name: "Gascony", kind: "land", owner: "FRA", x: 335, y: 624, armyAdj: ["BRE", "PAR", "BUR", "SPA"], fleetAdj: ["BRE", "SPA", "MAO"] },
 
   // ---------------- GERMANY ----------------
-  { id: "BER", name: "Berlin", kind: "land", coast: true, supply: "home", owner: "GER", x: 477, y: 455, adj: ["MUN", "SIL", "KIE", "PRU", "BAL"] },
-  { id: "KIE", name: "Kiel", kind: "land", coast: true, supply: "home", owner: "GER", x: 445, y: 450, adj: ["MUN", "RUH", "BER", "BAL", "HEL", "DEN", "HOL"] },
-  { id: "MUN", name: "Munich", kind: "land", coast: false, supply: "home", owner: "GER", x: 443, y: 555, adj: ["BER", "SIL", "BOH", "TYR", "BUR", "RUH", "KIE"] },
-  { id: "RUH", name: "Ruhr", kind: "land", coast: false, owner: "GER", x: 421, y: 512, adj: ["MUN", "KIE", "BEL", "HOL", "BUR"] },
-  { id: "SIL", name: "Silesia", kind: "land", coast: false, owner: "GER", x: 539, y: 503, adj: ["MUN", "BER", "PRU", "WAR", "BOH", "GAL"] },
+  { id: "BER", name: "Berlin", kind: "land", supply: "home", owner: "GER", x: 477, y: 455, armyAdj: ["MUN", "SIL", "KIE", "PRU"], fleetAdj: ["KIE", "PRU", "BAL"] },
+  { id: "KIE", name: "Kiel", kind: "land", supply: "home", owner: "GER", x: 445, y: 450, armyAdj: ["MUN", "RUH", "BER", "DEN", "HOL"], fleetAdj: ["BER", "BAL", "HEL", "DEN", "HOL"] },
+  { id: "MUN", name: "Munich", kind: "land", supply: "home", owner: "GER", x: 443, y: 555, armyAdj: ["BER", "SIL", "BOH", "TYR", "BUR", "RUH", "KIE"], fleetAdj: [] },
+  { id: "RUH", name: "Ruhr", kind: "land", owner: "GER", x: 421, y: 512, armyAdj: ["MUN", "KIE", "BEL", "HOL", "BUR"], fleetAdj: [] },
+  { id: "SIL", name: "Silesia", kind: "land", owner: "GER", x: 539, y: 503, armyAdj: ["MUN", "BER", "PRU", "WAR", "BOH", "GAL"], fleetAdj: [] },
 
   // ---------------- ITALY ----------------
-  { id: "ROM", name: "Rome", kind: "land", coast: true, supply: "home", owner: "ITA", x: 482, y: 654, adj: ["TUS", "NAP", "APU", "VEN"] },
-  { id: "VEN", name: "Venice", kind: "land", coast: true, supply: "home", owner: "ITA", x: 478, y: 611, adj: ["PIE", "TUS", "APU", "TYR", "TRI", "ADR"] },
-  { id: "NAP", name: "Naples", kind: "land", coast: true, supply: "home", owner: "ITA", x: 514, y: 683, adj: ["ROM", "APU", "ION", "TYS"] },
-  { id: "PIE", name: "Piedmont", kind: "land", coast: true, owner: "ITA", x: 429, y: 615, adj: ["MAR", "BUR", "VEN", "TYR", "GOL", "TUS"] },
-  { id: "TUS", name: "Tuscany", kind: "land", coast: true, owner: "ITA", x: 453, y: 625, adj: ["ROM", "VEN", "PIE", "TYS", "GOL"] },
-  { id: "APU", name: "Apulia", kind: "land", coast: true, owner: "ITA", x: 525, y: 662, adj: ["VEN", "ROM", "NAP", "ION", "ADR"] },
+  { id: "ROM", name: "Rome", kind: "land", supply: "home", owner: "ITA", x: 482, y: 654, armyAdj: ["TUS", "NAP", "APU", "VEN"], fleetAdj: ["TUS", "NAP", "APU", "VEN"] },
+  { id: "VEN", name: "Venice", kind: "land", supply: "home", owner: "ITA", x: 478, y: 611, armyAdj: ["PIE", "TUS", "APU", "TYR", "TRI"], fleetAdj: ["PIE", "TUS", "APU", "TRI", "ADR"] },
+  { id: "NAP", name: "Naples", kind: "land", supply: "home", owner: "ITA", x: 514, y: 683, armyAdj: ["ROM", "APU"], fleetAdj: ["ROM", "APU", "ION", "TYS"] },
+  { id: "PIE", name: "Piedmont", kind: "land", owner: "ITA", x: 429, y: 615, armyAdj: ["MAR", "BUR", "VEN", "TYR", "TUS"], fleetAdj: ["MAR", "VEN", "GOL", "TUS"] },
+  { id: "TUS", name: "Tuscany", kind: "land", owner: "ITA", x: 453, y: 625, armyAdj: ["ROM", "VEN", "PIE"], fleetAdj: ["ROM", "VEN", "PIE", "TYS", "GOL"] },
+  { id: "APU", name: "Apulia", kind: "land", owner: "ITA", x: 525, y: 662, armyAdj: ["VEN", "ROM", "NAP"], fleetAdj: ["VEN", "ROM", "NAP", "ION", "ADR"] },
 
   // ---------------- RUSSIA ----------------
-  { id: "MOS", name: "Moscow", kind: "land", coast: false, supply: "home", owner: "RUS", x: 741, y: 441, adj: ["SEV", "WAR", "UKR", "LIV", "STP"] },
-  { id: "STP", name: "St. Petersburg", kind: "land", coast: true, supply: "home", owner: "RUS", x: 729, y: 301, adj: ["FIN", "BAR", "LIV", "MOS", "NOR"] },
-  { id: "SEV", name: "Sevastopol", kind: "land", coast: true, supply: "home", owner: "RUS", x: 731, y: 595, adj: ["MOS", "UKR", "RUM", "ARM", "BLA"] },
-  { id: "WAR", name: "Warsaw", kind: "land", coast: false, supply: "home", owner: "RUS", x: 621, y: 485, adj: ["MOS", "UKR", "GAL", "SIL", "PRU"] },
-  { id: "UKR", name: "Ukraine", kind: "land", coast: false, owner: "RUS", x: 680, y: 515, adj: ["MOS", "WAR", "GAL", "RUM", "SEV"] },
-  { id: "LIV", name: "Livonia", kind: "land", coast: true, owner: "RUS", x: 596, y: 400, adj: ["MOS", "PRU", "BAL", "STP", "WAR"] },
-  { id: "FIN", name: "Finland", kind: "land", coast: true, owner: "RUS", x: 598, y: 298, adj: ["STP", "SWE", "NOR", "BAR"] },
+  { id: "MOS", name: "Moscow", kind: "land", supply: "home", owner: "RUS", x: 741, y: 441, armyAdj: ["SEV", "WAR", "UKR", "LIV", "STP"], fleetAdj: [] },
+  { id: "STP", name: "St. Petersburg", kind: "land", supply: "home", owner: "RUS", x: 729, y: 301, armyAdj: ["FIN", "LIV", "MOS", "NOR"], fleetAdj: ["FIN", "BAR", "LIV", "NOR"] },
+  { id: "SEV", name: "Sevastopol", kind: "land", supply: "home", owner: "RUS", x: 731, y: 595, armyAdj: ["MOS", "UKR", "RUM", "ARM"], fleetAdj: ["RUM", "BLA"] },
+  { id: "WAR", name: "Warsaw", kind: "land", supply: "home", owner: "RUS", x: 621, y: 485, armyAdj: ["MOS", "UKR", "GAL", "SIL", "PRU"], fleetAdj: [] },
+  { id: "UKR", name: "Ukraine", kind: "land", owner: "RUS", x: 680, y: 515, armyAdj: ["MOS", "WAR", "GAL", "RUM", "SEV"], fleetAdj: [] },
+  { id: "LIV", name: "Livonia", kind: "land", owner: "RUS", x: 596, y: 400, armyAdj: ["MOS", "PRU", "STP", "WAR"], fleetAdj: ["PRU", "BAL", "STP"] },
+  { id: "FIN", name: "Finland", kind: "land", owner: "RUS", x: 598, y: 298, armyAdj: ["STP", "SWE", "NOR"], fleetAdj: ["STP", "SWE", "NOR", "BAR"] },
 
   // ---------------- TURKEY ----------------
-  { id: "CON", name: "Constantinople", kind: "land", coast: true, supply: "home", owner: "TUR", x: 656, y: 697, adj: ["ANK", "SMY", "BLA", "AEG", "BUL", "MRS"] },
-  { id: "ANK", name: "Ankara", kind: "land", coast: true, supply: "home", owner: "TUR", x: 731, y: 666, adj: ["CON", "SMY", "ARM", "BLA", "MRS"] },
-  { id: "SMY", name: "Smyrna", kind: "land", coast: true, supply: "home", owner: "TUR", x: 696, y: 729, adj: ["CON", "ANK", "ARM", "SYR", "AEG", "EAS"] },
-  { id: "ARM", name: "Armenia", kind: "land", coast: false, owner: "TUR", x: 826, y: 651, adj: ["ANK", "SMY", "SEV", "SYR", "BLA"] },
-  { id: "SYR", name: "Syria", kind: "land", coast: true, owner: "TUR", x: 759, y: 753, adj: ["SMY", "ARM", "EAS"] },
+  { id: "CON", name: "Constantinople", kind: "land", supply: "home", owner: "TUR", x: 656, y: 697, armyAdj: ["ANK", "SMY", "BUL"], fleetAdj: ["ANK", "SMY", "BLA", "AEG", "BUL"] },
+  { id: "ANK", name: "Ankara", kind: "land", supply: "home", owner: "TUR", x: 731, y: 666, armyAdj: ["CON", "SMY", "ARM"], fleetAdj: ["CON", "SMY", "BLA"] },
+  { id: "SMY", name: "Smyrna", kind: "land", supply: "home", owner: "TUR", x: 696, y: 729, armyAdj: ["CON", "ANK", "ARM", "SYR"], fleetAdj: ["CON", "ANK", "SYR", "AEG", "EAS"] },
+  { id: "ARM", name: "Armenia", kind: "land", owner: "TUR", x: 826, y: 651, armyAdj: ["ANK", "SMY", "SEV", "SYR"], fleetAdj: [] },
+  { id: "SYR", name: "Syria", kind: "land", owner: "TUR", x: 759, y: 753, armyAdj: ["SMY", "ARM"], fleetAdj: ["SMY", "EAS"] },
 
   // ---------------- NEUTRAL SUPPLY CENTRES ----------------
-  { id: "BEL", name: "Belgium", kind: "land", coast: true, supply: "neutral", owner: "NEU", x: 381, y: 509, adj: ["PIC", "BUR", "RUH", "HOL", "ENC", "NTH"] },
-  { id: "HOL", name: "Holland", kind: "land", coast: true, supply: "neutral", owner: "NEU", x: 397, y: 484, adj: ["RUH", "BEL", "KIE", "HEL", "NTH"] },
-  { id: "DEN", name: "Denmark", kind: "land", coast: true, supply: "neutral", owner: "NEU", x: 445, y: 417, adj: ["KIE", "SWE", "NOR", "SKG", "HEL", "BAL"] },
-  { id: "NOR", name: "Norway", kind: "land", coast: true, supply: "neutral", owner: "NEU", x: 409, y: 333, adj: ["NWG", "SWE", "FIN", "BAR", "SKG", "NTH", "STP"] },
-  { id: "SWE", name: "Sweden", kind: "land", coast: true, supply: "neutral", owner: "NEU", x: 530, y: 340, adj: ["DEN", "NOR", "FIN", "BAL", "SKG"] },
-  { id: "SPA", name: "Spain", kind: "land", coast: true, supply: "neutral", owner: "NEU", x: 305, y: 666, adj: ["POR", "GAS", "MAR", "MAO", "WES", "GOL"] },
-  { id: "POR", name: "Portugal", kind: "land", coast: true, supply: "neutral", owner: "NEU", x: 246, y: 709, adj: ["SPA", "MAO"] },
-  { id: "GRE", name: "Greece", kind: "land", coast: true, supply: "neutral", owner: "NEU", x: 583, y: 700, adj: ["AEG", "ION", "SER", "BUL", "ALB"] },
-  { id: "SER", name: "Serbia", kind: "land", coast: false, supply: "neutral", owner: "NEU", x: 584, y: 649, adj: ["BUD", "RUM", "GRE", "ALB", "BUL", "TRI"] },
-  { id: "RUM", name: "Romania", kind: "land", coast: true, supply: "neutral", owner: "NEU", x: 655, y: 616, adj: ["BUD", "GAL", "UKR", "SEV", "BLA", "BUL", "SER"] },
-  { id: "BUL", name: "Bulgaria", kind: "land", coast: true, supply: "neutral", owner: "NEU", x: 619, y: 648, adj: ["CON", "GRE", "SER", "RUM", "BLA", "AEG", "MRS"] },
-  { id: "TUN", name: "Tunisia", kind: "land", coast: true, supply: "neutral", owner: "NEU", x: 455, y: 753, adj: ["WES", "TYS", "ION", "EAS"] },
+  { id: "BEL", name: "Belgium", kind: "land", supply: "neutral", owner: "NEU", x: 381, y: 509, armyAdj: ["PIC", "BUR", "RUH", "HOL"], fleetAdj: ["PIC", "HOL", "ENC", "NTH"] },
+  { id: "HOL", name: "Holland", kind: "land", supply: "neutral", owner: "NEU", x: 397, y: 484, armyAdj: ["RUH", "BEL", "KIE"], fleetAdj: ["BEL", "KIE", "HEL", "NTH"] },
+  { id: "DEN", name: "Denmark", kind: "land", supply: "neutral", owner: "NEU", x: 445, y: 417, armyAdj: ["KIE", "SWE", "NOR"], fleetAdj: ["KIE", "SWE", "NOR", "SKG", "HEL", "BAL"] },
+  { id: "NOR", name: "Norway", kind: "land", supply: "neutral", owner: "NEU", x: 409, y: 333, armyAdj: ["SWE", "FIN", "STP"], fleetAdj: ["NWG", "SWE", "FIN", "BAR", "SKG", "NTH", "STP"] },
+  { id: "SWE", name: "Sweden", kind: "land", supply: "neutral", owner: "NEU", x: 530, y: 340, armyAdj: ["DEN", "NOR", "FIN"], fleetAdj: ["DEN", "NOR", "FIN", "BAL", "SKG"] },
+  { id: "SPA", name: "Spain", kind: "land", supply: "neutral", owner: "NEU", x: 305, y: 666, armyAdj: ["POR", "GAS", "MAR"], fleetAdj: ["POR", "GAS", "MAR", "MAO", "WES", "GOL"] },
+  { id: "POR", name: "Portugal", kind: "land", supply: "neutral", owner: "NEU", x: 246, y: 709, armyAdj: ["SPA"], fleetAdj: ["SPA", "MAO"] },
+  { id: "GRE", name: "Greece", kind: "land", supply: "neutral", owner: "NEU", x: 583, y: 700, armyAdj: ["SER", "BUL", "ALB"], fleetAdj: ["AEG", "ION", "BUL", "ALB"] },
+  { id: "SER", name: "Serbia", kind: "land", supply: "neutral", owner: "NEU", x: 584, y: 649, armyAdj: ["BUD", "RUM", "GRE", "ALB", "BUL", "TRI"], fleetAdj: [] },
+  { id: "RUM", name: "Romania", kind: "land", supply: "neutral", owner: "NEU", x: 655, y: 616, armyAdj: ["BUD", "GAL", "UKR", "SEV", "BUL", "SER"], fleetAdj: ["SEV", "BLA", "BUL"] },
+  { id: "BUL", name: "Bulgaria", kind: "land", supply: "neutral", owner: "NEU", x: 619, y: 648, armyAdj: ["CON", "GRE", "SER", "RUM"], fleetAdj: ["CON", "GRE", "RUM", "BLA", "AEG"] },
+  { id: "TUN", name: "Tunisia", kind: "land", supply: "neutral", owner: "NEU", x: 455, y: 753, armyAdj: [], fleetAdj: ["WES", "TYS", "ION", "EAS"] },
 
-  { id: "PRU", name: "Prussia", kind: "land", coast: true, owner: "GER", x: 564, y: 449, adj: ["BER", "SIL", "WAR", "LIV", "BAL"] },
+  { id: "PRU", name: "Prussia", kind: "land", owner: "GER", x: 564, y: 449, armyAdj: ["BER", "SIL", "WAR", "LIV"], fleetAdj: ["BER", "LIV", "BAL"] },
 
   // ---------------- NEUTRAL (non-supply) ----------------
-  { id: "ALB", name: "Albania", kind: "land", coast: true, owner: "NEU", x: 564, y: 668, adj: ["GRE", "SER", "ION", "ADR", "TRI"] },
-  { id: "SWI", name: "Switzerland", kind: "land", coast: false, owner: "NEU", x: 595, y: 545, adj: ["MUN", "TYR", "BUR", "PIE"] },
-  { id: "NAF", name: "North Africa", kind: "land", coast: true, owner: "NEU", x: 302, y: 765, adj: ["MAO", "WES", "TUN"] },
+  { id: "ALB", name: "Albania", kind: "land", owner: "NEU", x: 564, y: 668, armyAdj: ["GRE", "SER", "TRI"], fleetAdj: ["GRE", "ION", "ADR", "TRI"] },
+  { id: "SWI", name: "Switzerland", kind: "land", owner: "NEU", impassable: true, x: 595, y: 545, armyAdj: ["MUN", "TYR", "BUR", "PIE"], fleetAdj: [] },
+  { id: "NAF", name: "North Africa", kind: "land", owner: "NEU", x: 302, y: 765, armyAdj: ["TUN"], fleetAdj: ["MAO", "WES", "TUN"] },
 
   // ---------------- SEAS ----------------
-  { id: "ADR", name: "Adriatic Sea", kind: "sea", coast: true, x: 510, y: 632, rx: 38, ry: 17, adj: ["VEN", "TRI", "ALB", "ION", "APU"] },
-  { id: "AEG", name: "Aegean Sea", kind: "sea", coast: true, x: 629, y: 724, rx: 38, ry: 17, adj: ["GRE", "ION", "EAS", "SMY", "CON", "BUL", "MRS"] },
-  { id: "ATL", name: "Atlantic Ocean", kind: "sea", coast: true, x: 106, y: 359, rx: 70, ry: 42, adj: ["POR", "IRI", "NWG", "MAO", "NTH"] },
-  { id: "BAL", name: "Baltic Sea", kind: "sea", coast: true, x: 526, y: 417, rx: 42, ry: 19, adj: ["BER", "PRU", "LIV", "SWE", "DEN", "KIE"] },
-  { id: "BAR", name: "Barents Sea", kind: "sea", coast: true, x: 850, y: 42, rx: 60, ry: 36, adj: ["NOR", "FIN", "STP", "NWG"] },
-  { id: "EAS", name: "Eastern Med.", kind: "sea", coast: true, x: 651, y: 771, rx: 46, ry: 22, adj: ["ION", "AEG", "SMY", "SYR"] },
-  { id: "ENC", name: "English Channel", kind: "sea", coast: true, x: 334, y: 516, rx: 36, ry: 16, adj: ["NTH", "IRI", "LON", "WAL", "BEL", "PIC", "BRE", "MAO", "ATL"] },
-  { id: "GOL", name: "Gulf of Lyon", kind: "sea", coast: true, x: 389, y: 665, rx: 40, ry: 18, adj: ["SPA", "PIE", "MAR", "TUS", "TYS", "WES"] },
-  { id: "HEL", name: "Heligoland Bight", kind: "sea", coast: true, x: 411, y: 442, rx: 34, ry: 15, adj: ["NTH", "HOL", "KIE", "DEN"] },
-  { id: "ION", name: "Ionian Sea", kind: "sea", coast: true, x: 558, y: 767, rx: 44, ry: 20, adj: ["TUN", "NAP", "APU", "ALB", "GRE", "AEG", "EAS", "TYS", "ADR"] },
-  { id: "IRI", name: "Irish Sea", kind: "sea", coast: true, x: 249, y: 506, rx: 32, ry: 16, adj: ["ATL", "LVP", "WAL", "ENC"] },
-  { id: "MAO", name: "Mid-Atlantic", kind: "sea", coast: true, x: 140, y: 676, rx: 48, ry: 24, adj: ["ATL", "NTH", "IRI", "ENC", "BRE", "GAS", "SPA", "POR", "WES", "NAF"] },
-  { id: "MRS", name: "Marmara Sea", kind: "sea", coast: true, x: 675, y: 672, rx: 16, ry: 10, adj: ["CON", "AEG", "BLA", "ANK", "BUL"] },
-  { id: "NTH", name: "North Sea", kind: "sea", coast: true, x: 364, y: 431, rx: 52, ry: 26, adj: ["LVP", "EDI", "YOR", "LON", "BEL", "HOL", "HEL", "NOR", "NWG", "SKG", "ATL", "MAO"] },
-  { id: "NWG", name: "Norwegian Sea", kind: "sea", coast: true, x: 316, y: 164, rx: 52, ry: 26, adj: ["EDI", "NOR", "BAR", "NTH", "ATL"] },
-  { id: "SKG", name: "Skagerrak", kind: "sea", coast: true, x: 451, y: 366, rx: 34, ry: 15, adj: ["NTH", "NOR", "DEN", "SWE"] },
-  { id: "TYS", name: "Tyrrhenian Sea", kind: "sea", coast: true, x: 484, y: 695, rx: 34, ry: 15, adj: ["WES", "GOL", "TUS", "NAP", "ION"] },
-  { id: "WES", name: "Western Med.", kind: "sea", coast: true, x: 397, y: 718, rx: 46, ry: 22, adj: ["MAO", "SPA", "GOL", "TYS", "TUN"] },
-  { id: "BLA", name: "Black Sea", kind: "sea", coast: true, x: 757, y: 632, rx: 48, ry: 24, adj: ["SEV", "RUM", "BUL", "CON", "ANK", "ARM", "MRS"] },
+  { id: "ADR", name: "Adriatic Sea", kind: "sea", x: 510, y: 632, rx: 38, ry: 17, armyAdj: [], fleetAdj: ["VEN", "TRI", "ALB", "ION", "APU"] },
+  { id: "AEG", name: "Aegean Sea", kind: "sea", x: 629, y: 724, rx: 38, ry: 17, armyAdj: [], fleetAdj: ["GRE", "ION", "EAS", "SMY", "CON", "BUL"] },
+  { id: "NAO", name: "Atlantic Ocean", kind: "sea", x: 106, y: 359, rx: 70, ry: 42, armyAdj: [], fleetAdj: ["POR", "IRI", "NWG", "MAO", "NTH"] },
+  { id: "BAL", name: "Baltic Sea", kind: "sea", x: 526, y: 417, rx: 42, ry: 19, armyAdj: [], fleetAdj: ["BER", "PRU", "LIV", "SWE", "DEN", "KIE"] },
+  { id: "BAR", name: "Barents Sea", kind: "sea", x: 850, y: 42, rx: 60, ry: 36, armyAdj: [], fleetAdj: ["NOR", "FIN", "STP", "NWG"] },
+  { id: "EAS", name: "Eastern Med.", kind: "sea", x: 651, y: 771, rx: 46, ry: 22, armyAdj: [], fleetAdj: ["ION", "AEG", "SMY", "SYR"] },
+  { id: "ENC", name: "English Channel", kind: "sea", x: 334, y: 516, rx: 36, ry: 16, armyAdj: [], fleetAdj: ["NTH", "IRI", "LON", "WAL", "BEL", "PIC", "BRE", "MAO", "NAO"] },
+  { id: "GOL", name: "Gulf of Lyon", kind: "sea", x: 389, y: 665, rx: 40, ry: 18, armyAdj: [], fleetAdj: ["SPA", "PIE", "MAR", "TUS", "TYS", "WES"] },
+  { id: "HEL", name: "Heligoland Bight", kind: "sea", x: 411, y: 442, rx: 34, ry: 15, armyAdj: [], fleetAdj: ["NTH", "HOL", "KIE", "DEN"] },
+  { id: "ION", name: "Ionian Sea", kind: "sea", x: 558, y: 767, rx: 44, ry: 20, armyAdj: [], fleetAdj: ["TUN", "NAP", "APU", "ALB", "GRE", "AEG", "EAS", "TYS", "ADR"] },
+  { id: "IRI", name: "Irish Sea", kind: "sea", x: 249, y: 506, rx: 32, ry: 16, armyAdj: [], fleetAdj: ["NAO", "LVP", "WAL", "ENC"] },
+  { id: "MAO", name: "Mid-Atlantic", kind: "sea", x: 140, y: 676, rx: 48, ry: 24, armyAdj: [], fleetAdj: ["NAO", "NTH", "IRI", "ENC", "BRE", "GAS", "SPA", "POR", "WES", "NAF"] },
+  { id: "NTH", name: "North Sea", kind: "sea", x: 364, y: 431, rx: 52, ry: 26, armyAdj: [], fleetAdj: ["LVP", "EDI", "YOR", "LON", "BEL", "HOL", "HEL", "NOR", "NWG", "SKG", "NAO", "MAO"] },
+  { id: "NWG", name: "Norwegian Sea", kind: "sea", x: 316, y: 164, rx: 52, ry: 26, armyAdj: [], fleetAdj: ["EDI", "NOR", "BAR", "NTH", "NAO"] },
+  { id: "SKG", name: "Skagerrak", kind: "sea", x: 451, y: 366, rx: 34, ry: 15, armyAdj: [], fleetAdj: ["NTH", "NOR", "DEN", "SWE"] },
+  { id: "TYS", name: "Tyrrhenian Sea", kind: "sea", x: 484, y: 695, rx: 34, ry: 15, armyAdj: [], fleetAdj: ["WES", "GOL", "TUS", "NAP", "ION"] },
+  { id: "WES", name: "Western Med.", kind: "sea", x: 397, y: 718, rx: 46, ry: 22, armyAdj: [], fleetAdj: ["MAO", "SPA", "GOL", "TYS", "TUN"] },
+  { id: "BLA", name: "Black Sea", kind: "sea", x: 757, y: 632, rx: 48, ry: 24, armyAdj: [], fleetAdj: ["SEV", "RUM", "BUL", "CON", "ANK"] },
+  { id: "BOT", name: "Gulf of Bothnia", kind: "sea", x: 592, y: 357, rx: 34, ry: 16, armyAdj: [], fleetAdj: [] },
 ];
 
+/** The six fleet locations belonging to the three provinces with two coasts. */
+export const COAST_LOCATIONS: CoastLocation[] = [
+  { id: "SPA/NC", province: "SPA", name: "Spain (north coast)", fleetAdj: ["MAO", "POR", "GAS"], x: 292, y: 654 },
+  { id: "SPA/SC", province: "SPA", name: "Spain (south coast)", fleetAdj: ["MAO", "POR", "WES", "GOL", "MAR"], x: 315, y: 679 },
+  { id: "STP/NC", province: "STP", name: "St. Petersburg (north coast)", fleetAdj: ["BAR", "NOR"], x: 748, y: 288 },
+  { id: "STP/SC", province: "STP", name: "St. Petersburg (south coast)", fleetAdj: ["BOT", "FIN", "LIV"], x: 710, y: 315 },
+  { id: "BUL/EC", province: "BUL", name: "Bulgaria (east coast)", fleetAdj: ["BLA", "RUM", "CON"], x: 632, y: 643 },
+  { id: "BUL/SC", province: "BUL", name: "Bulgaria (south coast)", fleetAdj: ["AEG", "GRE", "CON"], x: 613, y: 661 },
+];
+
+// Corrections to the old node-map draft. Keeping topology here makes the two
+// movement graphs independently reviewable instead of inferring fleet moves
+// from a lossy "coastal" flag.
+const topology: Record<string, Partial<Pick<Province, "armyAdj" | "fleetAdj">>> = {
+  SWI: { armyAdj: [], fleetAdj: [] },
+  PIC: { armyAdj: ["BRE", "PAR", "BEL", "BUR"], fleetAdj: ["BRE", "BEL", "ENC"] },
+  ARM: { armyAdj: ["ANK", "SMY", "SEV", "SYR"], fleetAdj: ["ANK", "SEV", "BLA"] },
+  ANK: { fleetAdj: ["CON", "ARM", "BLA"] },
+  SEV: { fleetAdj: ["RUM", "ARM", "BLA"] },
+  BLA: { fleetAdj: ["SEV", "RUM", "BUL/EC", "CON", "ANK", "ARM"] },
+  NTH: { fleetAdj: ["EDI", "YOR", "LON", "BEL", "HOL", "HEL", "DEN", "NOR", "NWG", "SKG", "ENC"] },
+  LVP: { armyAdj: ["EDI", "YOR", "WAL"], fleetAdj: ["EDI", "WAL", "IRI", "NAO"] },
+  YOR: { armyAdj: ["EDI", "LVP", "LON", "WAL"], fleetAdj: ["EDI", "LON", "NTH"] },
+  FIN: { fleetAdj: ["SWE", "BOT", "STP/SC"] },
+  LIV: { fleetAdj: ["BAL", "BOT", "STP/SC"] },
+  BAL: { fleetAdj: ["BER", "PRU", "SWE", "DEN", "KIE", "BOT"] },
+  BOT: { fleetAdj: ["BAL", "SWE", "FIN", "STP/SC", "LIV"] },
+  BAR: { fleetAdj: ["NOR", "STP/NC", "NWG"] },
+  NOR: { fleetAdj: ["NWG", "NTH", "SKG", "SWE", "STP/NC"] },
+  MAO: { fleetAdj: ["NAO", "IRI", "ENC", "BRE", "GAS", "SPA/NC", "SPA/SC", "POR", "WES", "NAF"] },
+  GAS: { fleetAdj: ["BRE", "MAO", "SPA/NC"] },
+  POR: { fleetAdj: ["MAO", "SPA/NC", "SPA/SC"] },
+  WES: { fleetAdj: ["MAO", "SPA/SC", "GOL", "TYS", "TUN"] },
+  GOL: { fleetAdj: ["SPA/SC", "MAR", "PIE", "TUS", "TYS", "WES"] },
+  MAR: { fleetAdj: ["GOL", "PIE", "SPA/SC"] },
+  RUM: { fleetAdj: ["SEV", "BLA", "BUL/EC"] },
+  CON: { fleetAdj: ["BLA", "BUL/EC", "BUL/SC", "AEG", "SMY", "ANK"] },
+  AEG: { fleetAdj: ["GRE", "BUL/SC", "CON", "SMY", "EAS", "ION"] },
+  GRE: { fleetAdj: ["ALB", "ION", "AEG", "BUL/SC"] },
+  SPA: { fleetAdj: [] }, STP: { fleetAdj: [] }, BUL: { fleetAdj: [] },
+};
+for (const province of PROVINCES) Object.assign(province, topology[province.id]);
+
+export const provinceId = (location: string): string => location.split("/")[0];
+export const coastLocation = (id: string): CoastLocation | undefined => COAST_LOCATIONS.find((coast) => coast.id === id);
+
 export const PROVINCE_MAP: Record<string, Province> = Object.fromEntries(
-  PROVINCES.map((p) => [p.id, p]),
+  [
+    ...PROVINCES.map((p) => [p.id, p] as const),
+    ...COAST_LOCATIONS.map((coast) => {
+      const province = PROVINCES.find((candidate) => candidate.id === coast.province)!;
+      return [coast.id, { ...province, id: coast.id, name: coast.name, x: coast.x, y: coast.y, fleetAdj: coast.fleetAdj }] as const;
+    }),
+  ],
 );
 
 export const STARTING_UNITS: { power: PowerId; type: UnitType; loc: string }[] = [
@@ -194,7 +258,7 @@ export const STARTING_UNITS: { power: PowerId; type: UnitType; loc: string }[] =
   // Russia
   { power: "RUS", type: "A", loc: "MOS" },
   { power: "RUS", type: "A", loc: "WAR" },
-  { power: "RUS", type: "F", loc: "STP" },
+  { power: "RUS", type: "F", loc: "STP/SC" },
   { power: "RUS", type: "F", loc: "SEV" },
   // Turkey
   { power: "TUR", type: "A", loc: "CON" },
