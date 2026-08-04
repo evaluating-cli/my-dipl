@@ -7,6 +7,7 @@ import PowerChip from "./PowerChip";
 import LegendBar from "./LegendBar";
 import OrderPanel from "./OrderPanel";
 import AdjustPanel from "./AdjustPanel";
+import RetreatPanel from "./RetreatPanel";
 import LogPanel from "./LogPanel";
 import {
   GREAT_POWERS,
@@ -20,9 +21,12 @@ import {
   applyFallOwnership,
   emptyHomeCenters,
   generateAIOrders,
+  generateAIRetreatChoices,
+  legalRetreatDestinations,
   legalTargets,
   powerName,
   resolveMovement,
+  resolveRetreats,
   supplyCount,
   topPower,
   unitCount,
@@ -82,6 +86,12 @@ export default function Game(props: GameProps) {
   const selectedUnit = humanUnits.find((u) => u.id === selectedUnitId) ?? null;
   const sc = supplyCount(game);
   const uc = unitCount(game);
+  const [retreatChoices, setRetreatChoices] = useState<Record<string, string | null>>({});
+  const [selectedRetreatId, setSelectedRetreatId] = useState<string | null>(null);
+  const humanDislodged = game.dislodged.filter(({ unit }) => unit.power === human);
+  const retreatDestinations = Object.fromEntries(game.dislodged.map((entry) => [
+    entry.unit.id, legalRetreatDestinations(game, entry),
+  ]));
 
   // brief season-change toast
   const toastKey = `${game.season}-${game.year}-${game.phase}`;
@@ -100,11 +110,14 @@ export default function Game(props: GameProps) {
   }, [changed, setChanged]);
 
   const highlightMove = useMemo(() => {
+    if (game.phase === "Retreat" && selectedRetreatId) {
+      return new Set(retreatDestinations[selectedRetreatId] ?? []);
+    }
     if (selectedUnit && (pendingMode === "move" || pendingMode === null)) {
       return new Set(validMoveTargets(game, selectedUnit));
     }
     return new Set<string>();
-  }, [game, pendingMode, selectedUnit]);
+  }, [game, pendingMode, selectedUnit, selectedRetreatId]);
 
   const highlightSupport = useMemo(() => {
     if (pendingMode === "support" && selectedUnit) {
@@ -135,6 +148,13 @@ export default function Game(props: GameProps) {
   };
 
   const onProvince = (id: string) => {
+    if (game.phase === "Retreat") {
+      if (selectedRetreatId && (retreatDestinations[selectedRetreatId] ?? []).includes(id)) {
+        setRetreatChoices((previous) => ({ ...previous, [selectedRetreatId]: id }));
+        setSelectedRetreatId(null);
+      }
+      return;
+    }
     if (game.phase === "Adjust") {
       const u = game.units.find((x) => x.power === human && x.loc === id);
       if (u) {
@@ -202,6 +222,10 @@ export default function Game(props: GameProps) {
   };
 
   const onUnit = (u: Unit) => {
+    if (game.phase === "Retreat") {
+      onProvince(u.loc);
+      return;
+    }
     if (game.phase === "Adjust" && u.power === human) {
       if (disbands.includes(u.id)) setDisbands(disbands.filter((d) => d !== u.id));
       else if (disbands.length < mustDisbandN && disbandableIds.has(u.id)) setDisbands([...disbands, u.id]);
@@ -267,6 +291,27 @@ export default function Game(props: GameProps) {
     return plan;
   };
 
+  const advanceAfterMovement = (moved: GameState, movementChanged: string[]) => {
+    if (moved.season === "Spring") {
+      setChanged(movementChanged);
+      setGame({ ...moved, season: "Fall", phase: "Order", dislodged: [] });
+      return;
+    }
+    const fall = applyFallOwnership(moved);
+    const ownMsgs = fall.changed.map((id) => `${PROVINCE_MAP[id].name} now belongs to ${POWER_MAP[fall.centers[id]].name}.`);
+    let g: GameState = { ...moved, centers: fall.centers, log: [...moved.log, ...ownMsgs], phase: "Adjust", season: "Fall", dislodged: [] };
+    g = applyAdjustments(g, aiAdjustments(g));
+    const winner = winnerOf(g);
+    const defeated = g.units.filter((u) => u.power === human).length === 0 && supplyCount(g)[human] === 0;
+    if (winner || defeated) {
+      g = { ...g, winner: winner ?? topPower(g), defeat: !winner || winner !== human, phase: "GameOver", log: [...g.log, winner ? `${powerName(winner)} controls ${WIN_CENTERS} supply centres — the war is won.` : `${powerName(human)} has been swept from the map.`] };
+    }
+    setChanged(Array.from(new Set([...movementChanged, ...fall.changed])));
+    setGame(g);
+    setBuilds([]);
+    setDisbands([]);
+  };
+
   // ---- resolve a movement turn ---------------------------------------------
   const resolveTurn = () => {
     if (busy) return;
@@ -283,55 +328,22 @@ export default function Game(props: GameProps) {
 
       const res = resolveMovement(game, orders);
       const newLog = [...game.log, `──── ${game.season} ${game.year} resolves ────`, ...res.events];
-
-      if (game.season === "Spring") {
-        setChanged(res.changed);
-        setHumanOrders({});
-        setGame({ ...game, units: res.units, log: newLog, season: "Fall", phase: "Order" });
-        setBusy(false);
-        return;
-      }
-
-      // Fall → ownership, AI builds, winner / defeat checks
-      const fall = applyFallOwnership({ ...game, units: res.units });
-      const ownMsgs = fall.changed.map(
-        (id) => `${PROVINCE_MAP[id].name} now belongs to ${POWER_MAP[fall.centers[id]].name}.`,
-      );
-      let g: GameState = {
-        ...game,
-        units: res.units,
-        centers: fall.centers,
-        log: [...newLog, ...ownMsgs],
-        phase: "Adjust",
-        season: "Fall",
-      };
-      g = applyAdjustments(g, aiAdjustments(g));
-
-      const winner = winnerOf(g);
-      const hUnits = g.units.filter((u) => u.power === human).length;
-      const hCenters = supplyCount(g)[human];
-      if (winner || (hUnits === 0 && hCenters === 0)) {
-        setGame({
-          ...g,
-          winner: winner ?? topPower(g),
-          defeat: !winner || winner !== human,
-          phase: "GameOver",
-          log: [
-            ...g.log,
-            winner
-              ? `${powerName(winner)} controls ${WIN_CENTERS} supply centres — the war is won.`
-              : `${powerName(human)} has been swept from the map.`,
-          ],
-        });
-      } else {
-        setGame(g);
-      }
-      setChanged(Array.from(new Set([...res.changed, ...fall.changed])));
+      const moved = { ...game, units: res.units, dislodged: res.dislodged, log: newLog };
+      if (res.dislodged.length > 0) {
+        setGame({ ...moved, phase: "Retreat" });
+        setRetreatChoices({});
+      } else advanceAfterMovement(moved, res.changed);
       setHumanOrders({});
-      setBuilds([]);
-      setDisbands([]);
       setBusy(false);
     }, 650);
+  };
+
+  const confirmRetreats = () => {
+    const choices = { ...generateAIRetreatChoices(game), ...retreatChoices };
+    const resolved = resolveRetreats(game, choices);
+    setRetreatChoices({});
+    setSelectedRetreatId(null);
+    advanceAfterMovement(resolved, game.dislodged.map(({ unit }) => unit.loc));
   };
 
   // ---- winter builds / disbands ---------------------------------------------
@@ -561,6 +573,18 @@ export default function Game(props: GameProps) {
                   }}
                   onConfirm={confirmAdjust}
                   year={game.year}
+                />
+              )}
+
+              {game.phase === "Retreat" && (
+                <RetreatPanel
+                  units={humanDislodged}
+                  choices={retreatChoices}
+                  destinations={retreatDestinations}
+                  selectedId={selectedRetreatId}
+                  onSelect={setSelectedRetreatId}
+                  onDisband={(id) => setRetreatChoices((previous) => ({ ...previous, [id]: null }))}
+                  onConfirm={confirmRetreats}
                 />
               )}
 

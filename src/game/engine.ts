@@ -51,14 +51,26 @@ export interface ValidationResult<T> {
   errors: ValidationError[];
 }
 
-export type Phase = "Order" | "Adjust" | "GameOver";
+export type Phase = "Order" | "Retreat" | "Adjust" | "GameOver";
 export type Season = "Spring" | "Fall";
+
+export interface DislodgedUnit {
+  unit: Unit;
+  /** Province from which the successful attack was launched. */
+  attackerOrigin: string;
+  /** Provinces in which equally strong movement orders bounced this turn. */
+  prohibitedStandoffProvinces: string[];
+}
+
+export type RetreatChoices = Record<string, string | null>;
 
 export interface GameState {
   year: number;
   season: Season;
   phase: Phase;
   units: Unit[];
+  /** Units awaiting a simultaneous retreat or disband decision. */
+  dislodged: DislodgedUnit[];
   /** supply-centre ownership: province id -> power */
   centers: Record<string, PowerId>;
   /** the power controlled by the human */
@@ -165,6 +177,7 @@ export function createGame(human: PowerId): GameState {
     season: "Spring",
     phase: "Order",
     units,
+    dislodged: [],
     centers,
     human,
     log: [`Spring 1901 — the great powers mobilise. You command the forces of ${powerName(human)}.`],
@@ -213,6 +226,7 @@ export function winnerOf(state: GameState): PowerId | undefined {
 // ---------------------------------------------------------------------------
 export interface MovementResult {
   units: Unit[];
+  dislodged: DislodgedUnit[];
   events: string[];
   /** provinces worth highlighting after resolution */
   changed: string[];
@@ -277,19 +291,21 @@ function calculateStrengths(
 /** A tied destination has no winner; otherwise return its strongest attack. */
 function resolveDestinationContests(
   units: Unit[], orders: Record<string, Order>, strength: ReadonlyMap<string, number>,
-): Map<string, Unit> {
+): { winners: Map<string, Unit>; standoffs: Set<string> } {
   const attacks = new Map<string, Unit[]>();
   for (const unit of units) {
     const order = orders[unit.id];
     if (order.type === "move" && order.to) attacks.set(order.to, [...(attacks.get(order.to) ?? []), unit]);
   }
   const winners = new Map<string, Unit>();
+  const standoffs = new Set<string>();
   for (const [destination, contenders] of attacks) {
     const best = Math.max(...contenders.map((unit) => strength.get(unit.id) ?? 1));
     const strongest = contenders.filter((unit) => strength.get(unit.id) === best);
     if (strongest.length === 1) winners.set(destination, strongest[0]);
+    else standoffs.add(destination);
   }
-  return winners;
+  return { winners, standoffs };
 }
 
 type MoveResolution =
@@ -410,7 +426,7 @@ export function resolveMovement(
   const supports = validateSupports(units, orders);
   const cut = findCutSupports(units, orders, supports, forcedCuts);
   const strengths = calculateStrengths(units, orders, supports, cut);
-  const winners = resolveDestinationContests(units, orders, strengths.attack);
+  const { winners, standoffs } = resolveDestinationContests(units, orders, strengths.attack);
   const decision = resolveMoveDependencies(units, orders, winners, strengths.attack, strengths.defence);
   const { success, dislodged } = decision;
 
@@ -454,25 +470,11 @@ export function resolveMovement(
 
   // --- Apply moves -----------------------------------------------------------
   const result = applySuccessfulMovements(units, orders, decision);
-  const occupied = new Set<string>();
-  for (const moved of result) occupied.add(moved.loc);
-
-  // --- Retreats or disbands ---------------------------------------------------
-  for (const u of units) {
-    if (!dislodged.has(u.id)) continue;
-    const src = decision.attackerSrc.get(u.id);
-    const cands = legalTargets(u).filter(
-      (id) => !occupied.has(id) && id !== src && !result.some((r) => r.loc === id),
-    );
-    if (cands.length > 0) {
-      const dest = cands[0];
-      result.push({ ...u, loc: dest });
-      occupied.add(dest);
-      events.push(`Dislodged ${unitLabel(u)} retreats to ${provName(dest)}.`);
-    } else {
-      events.push(`Dislodged ${unitLabel(u)} has nowhere to retreat and is disbanded.`);
-    }
-  }
+  const unresolved = units.filter((unit) => dislodged.has(unit.id)).map((unit) => ({
+    unit: { ...unit },
+    attackerOrigin: decision.attackerSrc.get(unit.id)!,
+    prohibitedStandoffProvinces: Array.from(standoffs),
+  }));
 
   // --- Highlight set -----------------------------------------------------------
   const changed = new Set<string>();
@@ -482,7 +484,46 @@ export function resolveMovement(
   }
   for (const u of units) if (dislodged.has(u.id)) changed.add(u.loc);
 
-  return { units: result, events, changed: Array.from(changed) };
+  return { units: result, dislodged: unresolved, events, changed: Array.from(changed) };
+}
+
+/** Retreat destinations are evaluated against the board after movement. */
+export function legalRetreatDestinations(state: GameState, dislodged: DislodgedUnit): string[] {
+  const occupied = new Set(state.units.map((unit) => unit.loc));
+  const prohibited = new Set(dislodged.prohibitedStandoffProvinces);
+  return legalTargets(dislodged.unit).filter((loc) =>
+    !occupied.has(loc) && loc !== dislodged.attackerOrigin && !prohibited.has(loc),
+  );
+}
+
+/** Produce AI choices without applying them, so every power resolves together. */
+export function generateAIRetreatChoices(state: GameState): RetreatChoices {
+  return Object.fromEntries(state.dislodged
+    .filter(({ unit }) => unit.power !== state.human)
+    .map((entry) => [entry.unit.id, legalRetreatDestinations(state, entry)[0] ?? null]));
+}
+
+/** Apply all legal, non-conflicting retreats simultaneously; all others disband. */
+export function resolveRetreats(state: GameState, choices: RetreatChoices): GameState {
+  const destinations = new Map<string, string[]>();
+  for (const entry of state.dislodged) {
+    const choice = choices[entry.unit.id];
+    if (choice && legalRetreatDestinations(state, entry).includes(choice)) {
+      destinations.set(choice, [...(destinations.get(choice) ?? []), entry.unit.id]);
+    }
+  }
+  const units = [...state.units];
+  const log = [...state.log];
+  for (const entry of state.dislodged) {
+    const choice = choices[entry.unit.id];
+    if (choice && destinations.get(choice)?.length === 1) {
+      units.push({ ...entry.unit, loc: choice });
+      log.push(`Dislodged ${unitLabel(entry.unit)} retreats to ${provName(choice)}.`);
+    } else {
+      log.push(`Dislodged ${unitLabel(entry.unit)} is disbanded.`);
+    }
+  }
+  return { ...state, units, dislodged: [], log };
 }
 
 // ---------------------------------------------------------------------------
