@@ -1,5 +1,5 @@
 import { SeaNode, LandNode, UnitNode } from "./MapNodes";
-import { useMemo, useState, useRef, useEffect, useCallback } from "react";
+import { useMemo, useState } from "react";
 import {
   COAST_LOCATIONS,
   POWER_MAP,
@@ -15,6 +15,7 @@ import {
   type Unit,
 } from "../game/engine";
 import MapPaths from "./MapPaths";
+import { useBoardViewport } from "../hooks/useBoardViewport";
 
 // ---------------------------------------------------------------------------
 // helpers
@@ -63,188 +64,15 @@ export default function Board(props: BoardProps) {
 
   const [hoverId, setHoverId] = useState<string | null>(null);
 
-  // ---------------------------------------------------------------------------
-  // Zoom & Pan State
-  // ---------------------------------------------------------------------------
-  const [zoomScale, setZoomScale] = useState<number>(1.0);
-  const [panOffset, setPanOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [isDragging, setIsDragging] = useState<boolean>(false);
-
-  const containerRef = useRef<HTMLDivElement>(null);
-  const isPointerDownRef = useRef<boolean>(false);
-  const pointerStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
-  const panStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
-  const hasDraggedRef = useRef<boolean>(false);
-  const ignoreClickRef = useRef<boolean>(false);
-
-  // Dynamic ViewBox calculations
-  const baseW = 920;
-  const baseH = 820;
-  const curW = baseW / zoomScale;
-  const curH = baseH / zoomScale;
-  const centerX = 450 + panOffset.x;
-  const centerY = 400 + panOffset.y;
-  const vx = centerX - curW / 2;
-  const vy = centerY - curH / 2;
-  const viewBox = `${vx} ${vy} ${curW} ${curH}`;
-
-  const handleZoomIn = useCallback(() => {
-    setZoomScale((prev) => Math.min(3.5, Number((prev * 1.25).toFixed(2))));
-  }, []);
-
-  const handleZoomOut = useCallback(() => {
-    setZoomScale((prev) => Math.max(0.75, Number((prev / 1.25).toFixed(2))));
-  }, []);
-
-  const handleResetZoom = useCallback(() => {
-    setZoomScale(1.0);
-    setPanOffset({ x: 0, y: 0 });
-  }, []);
-
-  // ---------------------------------------------------------------------------
-  // Drag to Pan Handlers
-  // ---------------------------------------------------------------------------
-  const handlePointerDown = (e: React.PointerEvent) => {
-    if (e.button !== 0 && e.pointerType === "mouse") return;
-    isPointerDownRef.current = true;
-    hasDraggedRef.current = false;
-    pointerStartRef.current = { x: e.clientX, y: e.clientY };
-    panStartRef.current = { ...panOffset };
-  };
-
-  useEffect(() => {
-    const handlePointerMove = (e: PointerEvent) => {
-      if (!isPointerDownRef.current || !containerRef.current) return;
-      const dx = e.clientX - pointerStartRef.current.x;
-      const dy = e.clientY - pointerStartRef.current.y;
-      const dist = Math.hypot(dx, dy);
-
-      if (dist > 4) {
-        hasDraggedRef.current = true;
-        setIsDragging(true);
-      }
-
-      if (hasDraggedRef.current) {
-        const rect = containerRef.current.getBoundingClientRect();
-        const svgW = baseW / zoomScale;
-        const svgH = baseH / zoomScale;
-        // `slice` uses one uniform scale and crops the overflowing axis.
-        // Converting both axes with that same scale keeps panning in sync with
-        // the rendered SVG regardless of the container's aspect ratio.
-        const renderedScale = Math.max(rect.width / svgW, rect.height / svgH);
-
-        const newPanX = panStartRef.current.x - dx / renderedScale;
-        const newPanY = panStartRef.current.y - dy / renderedScale;
-
-        const maxPanX = 550;
-        const maxPanY = 450;
-        setPanOffset({
-          x: Math.max(-maxPanX, Math.min(maxPanX, newPanX)),
-          y: Math.max(-maxPanY, Math.min(maxPanY, newPanY)),
-        });
-      }
-    };
-
-    const handlePointerUp = () => {
-      if (isPointerDownRef.current) {
-        isPointerDownRef.current = false;
-        setIsDragging(false);
-        if (hasDraggedRef.current) {
-          ignoreClickRef.current = true;
-          setTimeout(() => {
-            ignoreClickRef.current = false;
-          }, 120);
-        }
-      }
-    };
-
-    window.addEventListener("pointermove", handlePointerMove);
-    window.addEventListener("pointerup", handlePointerUp);
-    window.addEventListener("pointercancel", handlePointerUp);
-
-    return () => {
-      window.removeEventListener("pointermove", handlePointerMove);
-      window.removeEventListener("pointerup", handlePointerUp);
-      window.removeEventListener("pointercancel", handlePointerUp);
-    };
-  }, [panOffset, zoomScale]);
-
-  // Wheel zoom centered at mouse cursor
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    if (!containerRef.current) return;
-
-    const zoomFactor = e.deltaY < 0 ? 1.15 : 0.87;
-    const newScale = Math.max(0.75, Math.min(3.5, Number((zoomScale * zoomFactor).toFixed(2))));
-    if (newScale === zoomScale) return;
-
-    const rect = containerRef.current.getBoundingClientRect();
-    const svgW = baseW / zoomScale;
-    const svgH = baseH / zoomScale;
-    const renderedScale = Math.max(rect.width / svgW, rect.height / svgH);
-    const renderedW = svgW * renderedScale;
-    const renderedH = svgH * renderedScale;
-    const cropX = (renderedW - rect.width) / 2;
-    const cropY = (renderedH - rect.height) / 2;
-    const pointerSvgX = (e.clientX - rect.left + cropX) / renderedScale;
-    const pointerSvgY = (e.clientY - rect.top + cropY) / renderedScale;
-    const svgMouseX = vx + pointerSvgX;
-    const svgMouseY = vy + pointerSvgY;
-
-    const newSvgW = baseW / newScale;
-    const newSvgH = baseH / newScale;
-    const pointerXRatio = pointerSvgX / svgW;
-    const pointerYRatio = pointerSvgY / svgH;
-    const newVx = svgMouseX - pointerXRatio * newSvgW;
-    const newVy = svgMouseY - pointerYRatio * newSvgH;
-
-    const newCenterX = newVx + newSvgW / 2;
-    const newCenterY = newVy + newSvgH / 2;
-
-    const maxPanX = 550;
-    const maxPanY = 450;
-    setZoomScale(newScale);
-    setPanOffset({
-      x: Math.max(-maxPanX, Math.min(maxPanX, newCenterX - 450)),
-      y: Math.max(-maxPanY, Math.min(maxPanY, newCenterY - 400)),
-    });
-  };
-
-  // Keyboard zoom & pan shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (["INPUT", "TEXTAREA"].includes((e.target as HTMLElement)?.tagName)) return;
-      // Preserve browser and assistive-technology shortcuts such as
-      // Ctrl/Cmd +, Ctrl/Cmd -, and Ctrl/Cmd 0.
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
-
-      if (e.key === "+" || e.key === "=") {
-        e.preventDefault();
-        handleZoomIn();
-      } else if (e.key === "-" || e.key === "_") {
-        e.preventDefault();
-        handleZoomOut();
-      } else if (e.key === "0" || e.key === "r" || e.key === "R") {
-        e.preventDefault();
-        handleResetZoom();
-      } else if (e.key === "ArrowLeft") {
-        e.preventDefault();
-        setPanOffset((p) => ({ ...p, x: Math.max(-550, p.x - 60 / zoomScale) }));
-      } else if (e.key === "ArrowRight") {
-        e.preventDefault();
-        setPanOffset((p) => ({ ...p, x: Math.min(550, p.x + 60 / zoomScale) }));
-      } else if (e.key === "ArrowUp") {
-        e.preventDefault();
-        setPanOffset((p) => ({ ...p, y: Math.max(-450, p.y - 60 / zoomScale) }));
-      } else if (e.key === "ArrowDown") {
-        e.preventDefault();
-        setPanOffset((p) => ({ ...p, y: Math.min(450, p.y + 60 / zoomScale) }));
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [handleZoomIn, handleZoomOut, handleResetZoom, zoomScale]);
+  const {
+    containerRef,
+    zoomScale,
+    viewBox,
+    isDragging,
+    handlePointerDown,
+    handleWheel,
+    shouldSuppressClick,
+  } = useBoardViewport();
 
   const unitsByLoc = useMemo(() => {
     const m: Record<string, Unit> = {};
@@ -277,11 +105,11 @@ export default function Board(props: BoardProps) {
   const selectedUnit = game.units.find((u) => u.id === selectedUnitId) ?? null;
 
   const handleProvince = (id: string) => {
-    if (busy || ignoreClickRef.current) return;
+    if (busy || shouldSuppressClick()) return;
     props.onProvince(id);
   };
   const handleUnit = (u: Unit) => {
-    if (busy || ignoreClickRef.current) return;
+    if (busy || shouldSuppressClick()) return;
     if (pendingMode) {
       props.onProvince(u.loc);
     } else {
