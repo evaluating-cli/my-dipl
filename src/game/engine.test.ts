@@ -52,6 +52,21 @@ describe("dependency-graph movement adjudication", () => {
     expect(locations(result)).toMatchObject({ one: "BUR", two: "MUN", three: "BER" });
   });
 
+  it("fails a chain when a contested move disrupts its dependency", () => {
+    const units = [
+      unit("first", "PAR", "FRA"), unit("second", "BUR", "GER"),
+      unit("blocked", "MUN", "ITA"), unit("rival", "SIL", "RUS"),
+    ];
+    const result = resolveMovement(state(units), {
+      first: { type: "move", to: "BUR" },
+      second: { type: "move", to: "MUN" },
+      blocked: { type: "move", to: "BER" },
+      rival: { type: "move", to: "BER" },
+    });
+
+    expect(locations(result)).toMatchObject({ first: "PAR", second: "BUR", blocked: "MUN", rival: "SIL" });
+  });
+
   it("bounces equal-strength head-to-head moves", () => {
     const units = [unit("left", "PAR", "FRA"), unit("right", "BUR", "GER")];
     const result = resolveMovement(state(units), {
