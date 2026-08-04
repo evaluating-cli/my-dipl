@@ -25,7 +25,8 @@ export function unitColor(power: PowerId): string {
 export function orderText(o?: Order): string {
   if (!o || o.type === "hold") return "Hold";
   if (o.type === "move") return `Move to ${provName(o.to!)}`;
-  return `Support ${provName(o.supLoc!)}`;
+  const source = provName(o.supportFrom!);
+  return o.supportTo ? `Support ${source} to ${provName(o.supportTo)}` : `Support ${source} to hold`;
 }
 
 const MAP_W = 1000;
@@ -294,7 +295,10 @@ export default function Board(props: BoardProps) {
 
   const supportCountFor = (unit: Unit): number =>
     game.units.filter(
-      (x) => x.power === game.human && orders[x.id]?.type === "support" && orders[x.id].supLoc === unit.loc,
+      (x) =>
+        x.power === game.human &&
+        orders[x.id]?.type === "support" &&
+        orders[x.id].supportFrom === unit.loc,
     ).length;
 
   const curve = (a: Province, b: Province) => {
@@ -495,8 +499,8 @@ export default function Board(props: BoardProps) {
                 </g>
               );
             }
-            if (o.type === "support" && o.supLoc) {
-              const to = PROVINCE_MAP[o.supLoc];
+            if (o.type === "support" && o.supportFrom) {
+              const to = PROVINCE_MAP[o.supportTo ?? o.supportFrom];
               const c = curve(from, to);
               return (
                 <path key={`o-${u.id}`} d={c.d} fill="none" stroke="#0891b2" strokeWidth={2.6} strokeDasharray="3 6" markerEnd="url(#arrSup)" strokeLinecap="round" opacity={0.8} />
