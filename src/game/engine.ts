@@ -491,10 +491,12 @@ export function resolveMovement(
 /** Retreat destinations are evaluated against the board after movement. */
 export function legalRetreatDestinations(state: GameState, dislodged: DislodgedUnit): string[] {
   const occupied = new Set(state.units.map((unit) => provinceId(unit.loc)));
-  const prohibited = new Set(dislodged.prohibitedStandoffProvinces);
-  return legalTargets(dislodged.unit).filter((loc) =>
-    !occupied.has(loc) && loc !== dislodged.attackerOrigin && !prohibited.has(loc),
-  );
+  const prohibited = new Set(dislodged.prohibitedStandoffProvinces.map(provinceId));
+  const attackerOrigin = provinceId(dislodged.attackerOrigin);
+  return legalTargets(dislodged.unit).filter((loc) => {
+    const province = provinceId(loc);
+    return !occupied.has(province) && province !== attackerOrigin && !prohibited.has(province);
+  });
 }
 
 /** Produce AI choices without applying them, so every power resolves together. */
@@ -510,14 +512,15 @@ export function resolveRetreats(state: GameState, choices: RetreatChoices): Game
   for (const entry of state.dislodged) {
     const choice = choices[entry.unit.id];
     if (choice && legalRetreatDestinations(state, entry).includes(choice)) {
-      destinations.set(choice, [...(destinations.get(choice) ?? []), entry.unit.id]);
+      const province = provinceId(choice);
+      destinations.set(province, [...(destinations.get(province) ?? []), entry.unit.id]);
     }
   }
   const units = [...state.units];
   const log = [...state.log];
   for (const entry of state.dislodged) {
     const choice = choices[entry.unit.id];
-    if (choice && destinations.get(choice)?.length === 1) {
+    if (choice && destinations.get(provinceId(choice))?.length === 1) {
       units.push({ ...entry.unit, loc: choice });
       log.push(`Dislodged ${unitLabel(entry.unit)} retreats to ${provName(choice)}.`);
     } else {
@@ -710,7 +713,11 @@ export function applyAdjustments(state: GameState, plan: AdjustPlan): GameState 
   }).errors);
   if (errors.length) throw new Error(errors.map((error) => error.message).join(" "));
   let units = state.units.filter((u) => !plan.disbands.includes(u.id));
-  let nextId = 1000 + units.length;
+  const numericIds = state.units
+    .map((unit) => /^u(\d+)$/.exec(unit.id)?.[1])
+    .filter((id): id is string => id !== undefined)
+    .map(Number);
+  let nextId = Math.max(999, ...numericIds) + 1;
   for (const b of plan.builds) {
     units.push({ id: `u${nextId++}`, type: b.type, power: b.power, loc: b.loc });
   }
@@ -724,5 +731,5 @@ export function applyAdjustments(state: GameState, plan: AdjustPlan): GameState 
     const u = state.units.find((x) => x.id === id);
     if (u) log.push(`${powerName(u.power)} disbands ${unitLabel(u)}.`);
   }
-  return { ...state, units };
+  return { ...state, units, log };
 }

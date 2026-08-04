@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyAdjustments,
   createGame,
   normalizeMovementOrders,
   resolveMovement,
@@ -260,6 +261,19 @@ describe("adjustment validation", () => {
 
     expect(result.errors).toContainEqual(expect.objectContaining({ code: "WRONG_POWER", unitId: french.id }));
   });
+
+  it("assigns unique build ids and records adjustment events", () => {
+    const game = state([{ ...unit("u1022", "YOR", "ENG"), type: "F" }]);
+    game.centers = { LON: "ENG", BEL: "ENG" };
+
+    const adjusted = applyAdjustments(game, {
+      builds: [{ power: "ENG", type: "A", loc: "LON" }],
+      disbands: [],
+    });
+
+    expect(adjusted.units.map(({ id }) => id)).toEqual(["u1022", "u1023"]);
+    expect(adjusted.log.at(-1)).toBe("England raises a new army in London.");
+  });
 });
 
 describe("retreat adjudication", () => {
@@ -301,6 +315,21 @@ describe("retreat adjudication", () => {
       { unit: unit("two", "MUN", "GER"), attackerOrigin: "BER", prohibitedStandoffProvinces: [] },
     ];
     expect(resolveRetreats(game, { one: "BUR", two: "BUR" }).units).toEqual([]);
+  });
+
+  it("canonicalizes named coasts when checking occupancy and retreat conflicts", () => {
+    const occupied = state([unit("occupant", "SPA", "ITA")]);
+    const fleet = { ...unit("fleet", "MAO", "FRA"), type: "F" as const };
+    const dislodged = { unit: fleet, attackerOrigin: "NAO", prohibitedStandoffProvinces: [] };
+    expect(legalRetreatDestinations(occupied, dislodged)).not.toEqual(expect.arrayContaining(["SPA/NC", "SPA/SC"]));
+
+    const conflict = state([]);
+    conflict.phase = "Retreat";
+    conflict.dislodged = [
+      { unit: { ...unit("north", "GAS", "FRA"), type: "F" }, attackerOrigin: "BRE", prohibitedStandoffProvinces: [] },
+      { unit: { ...unit("south", "GOL", "ITA"), type: "F" }, attackerOrigin: "TYS", prohibitedStandoffProvinces: [] },
+    ];
+    expect(resolveRetreats(conflict, { north: "SPA/NC", south: "SPA/SC" }).units).toEqual([]);
   });
 
   it("forces a disband when no legal retreat exists", () => {
