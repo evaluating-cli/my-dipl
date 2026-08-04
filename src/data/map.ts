@@ -64,7 +64,7 @@ export const HOME_SUPPLY: Record<Exclude<PowerId, "NEU">, string[]> = {
   GER: ["BER", "KIE", "MUN"],
   ITA: ["ROM", "VEN", "NAP"],
   AUS: ["VIE", "BUD", "TRI"],
-  RUS: ["MOS", "STP", "SEV"],
+  RUS: ["MOS", "STP", "SEV", "WAR"],
   TUR: ["CON", "ANK", "SMY"],
 };
 
@@ -111,7 +111,7 @@ export const PROVINCES: Province[] = [
   { id: "MOS", name: "Moscow", kind: "land", coast: false, supply: "home", owner: "RUS", x: 741, y: 441, adj: ["SEV", "WAR", "UKR", "LIV", "STP"] },
   { id: "STP", name: "St. Petersburg", kind: "land", coast: true, supply: "home", owner: "RUS", x: 729, y: 301, adj: ["FIN", "BAR", "LIV", "MOS", "NOR"] },
   { id: "SEV", name: "Sevastopol", kind: "land", coast: true, supply: "home", owner: "RUS", x: 731, y: 595, adj: ["MOS", "UKR", "RUM", "ARM", "BLA"] },
-  { id: "WAR", name: "Warsaw", kind: "land", coast: false, owner: "RUS", x: 621, y: 485, adj: ["MOS", "UKR", "GAL", "SIL", "PRU"] },
+  { id: "WAR", name: "Warsaw", kind: "land", coast: false, supply: "home", owner: "RUS", x: 621, y: 485, adj: ["MOS", "UKR", "GAL", "SIL", "PRU"] },
   { id: "UKR", name: "Ukraine", kind: "land", coast: false, owner: "RUS", x: 680, y: 515, adj: ["MOS", "WAR", "GAL", "RUM", "SEV"] },
   { id: "LIV", name: "Livonia", kind: "land", coast: true, owner: "RUS", x: 596, y: 400, adj: ["MOS", "PRU", "BAL", "STP", "WAR"] },
   { id: "FIN", name: "Finland", kind: "land", coast: true, owner: "RUS", x: 598, y: 298, adj: ["STP", "SWE", "NOR", "BAR"] },
