@@ -272,7 +272,7 @@ export default function Game(props: GameProps) {
       const diff = scNow[p] - ucNow[p];
       if (diff > 0) {
         for (const loc of emptyHomeCenters(state, p).slice(0, diff)) {
-          plan.builds.push({ power: p, type: PROVINCE_MAP[loc].coast ? "F" : "A", loc });
+          plan.builds.push({ power: p, type: PROVINCE_MAP[loc].fleetAdj.length > 0 ? "F" : "A", loc });
         }
       } else if (diff < 0) {
         let toRemove = -diff;
