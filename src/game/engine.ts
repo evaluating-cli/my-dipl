@@ -136,8 +136,18 @@ export function validMoveTargets(state: GameState, unit: Unit): string[] {
   return neighbours(unit.loc, unit.type).filter((to) => validateMovementOrder(state, unit, { type: "move", to }).valid);
 }
 
-export function validSupportTargets(state: GameState, unit: Unit): string[] {
-  return neighbours(unit.loc, unit.type).filter((supportFrom) => validateMovementOrder(state, unit, { type: "support", supportFrom }).valid);
+export function validSupportTargets(
+  state: GameState,
+  unit: Unit,
+  orders: Readonly<Record<string, unknown>> = {},
+): string[] {
+  return state.units.flatMap((supported) => {
+    const supportedOrder = orders[supported.id] as Partial<Order> | undefined;
+    const order: Order = supportedOrder?.type === "move" && typeof supportedOrder.to === "string"
+      ? { type: "support", supportFrom: supported.loc, supportTo: supportedOrder.to }
+      : { type: "support", supportFrom: supported.loc };
+    return validateMovementOrder(state, unit, order).valid ? [supported.loc] : [];
+  });
 }
 
 /** Invalid, missing, and foreign order keys are harmless: every affected unit holds. */
