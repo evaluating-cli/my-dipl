@@ -7,6 +7,7 @@ import {
   legalRetreatDestinations,
   validateAdjustmentPlan,
   validateMovementOrder,
+  validSupportTargets,
   type GameState,
   type Order,
   type Unit,
@@ -212,6 +213,15 @@ describe("movement validation", () => {
     expect(validateMovementOrder(game, london, { type: "support", supportFrom: "WAL" }).errors[0]).toMatchObject({
       code: "NO_UNIT_TO_SUPPORT", loc: "WAL",
     });
+  });
+
+  it("derives supportable units from their submitted movement orders", () => {
+    const game = state([unit("supporter", "RUH", "FRA"), unit("moving", "BUR", "FRA")]);
+
+    expect(validSupportTargets(game, game.units[0], { moving: { type: "move", to: "MUN" } }))
+      .toContain("BUR");
+    expect(validSupportTargets(game, game.units[0], { moving: { type: "move", to: "PAR" } }))
+      .not.toContain("BUR");
   });
 
   it("normalizes missing and invalid orders to holds before adjudication", () => {

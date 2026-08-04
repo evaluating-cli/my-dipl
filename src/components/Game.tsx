@@ -23,7 +23,6 @@ import {
   generateAIOrders,
   generateAIRetreatChoices,
   legalRetreatDestinations,
-  legalTargets,
   powerName,
   resolveMovement,
   resolveRetreats,
@@ -121,16 +120,7 @@ export default function Game(props: GameProps) {
 
   const highlightSupport = useMemo(() => {
     if (pendingMode === "support" && selectedUnit) {
-      const reachable = new Set(legalTargets(selectedUnit));
-      return new Set(
-        game.units
-          .filter((unit) => {
-            const order = humanOrders[unit.id];
-            const destination = order?.type === "move" ? order.to : unit.loc;
-            return !!destination && reachable.has(destination);
-          })
-          .map((unit) => unit.loc),
-      );
+      return new Set(validSupportTargets(game, selectedUnit, humanOrders));
     }
     return new Set<string>();
   }, [pendingMode, selectedUnit, game.units, humanOrders]);
@@ -535,7 +525,7 @@ export default function Game(props: GameProps) {
                   selectedUnit={selectedUnit}
                   pendingMode={pendingMode}
                   canMove={highlightMove.size > 0}
-                  canSupport={selectedUnit ? validSupportTargets(game, selectedUnit).length > 0 : false}
+                  canSupport={selectedUnit ? validSupportTargets(game, selectedUnit, humanOrders).length > 0 : false}
                   onSelect={setSelectedUnitId}
                   onHold={() => {
                     if (selectedUnit) {
@@ -562,14 +552,24 @@ export default function Game(props: GameProps) {
                   buildTypesByCenter={buildTypesByCenter}
                   disbandableIds={disbandableIds}
                   onBuild={(b) => {
-                    if (builds.length < canBuildN && !builds.some((x) => x.loc === b.loc)) {
-                      setBuilds([...builds, b]);
-                    }
+                    const proposed = [...builds, b];
+                    const result = validateAdjustmentPlan(game, human, {
+                      builds: proposed.map((build) => ({ power: human, ...build })),
+                      disbands,
+                    });
+                    if (result.valid) setBuilds(proposed);
                   }}
                   onRemoveBuild={(loc) => setBuilds(builds.filter((b) => b.loc !== loc))}
                   onToggleDisband={(id) => {
                     if (disbands.includes(id)) setDisbands(disbands.filter((d) => d !== id));
-                    else if (disbands.length < mustDisbandN) setDisbands([...disbands, id]);
+                    else {
+                      const proposed = [...disbands, id];
+                      const result = validateAdjustmentPlan(game, human, {
+                        builds: builds.map((build) => ({ power: human, ...build })),
+                        disbands: proposed,
+                      });
+                      if (result.valid) setDisbands(proposed);
+                    }
                   }}
                   onConfirm={confirmAdjust}
                   year={game.year}
