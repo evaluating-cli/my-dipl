@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Crown, Flag, Hourglass, Skull, Swords } from "lucide-react";
 import Board from "./Board";
@@ -9,89 +9,22 @@ import OrderPanel from "./OrderPanel";
 import AdjustPanel from "./AdjustPanel";
 import RetreatPanel from "./RetreatPanel";
 import LogPanel from "./LogPanel";
-import {
-  GREAT_POWERS,
-  POWER_MAP,
-  PROVINCE_MAP,
-  WIN_CENTERS,
-  type UnitType,
-} from "../data/map";
-import {
-  applyAdjustments,
-  applyFallOwnership,
-  emptyHomeCenters,
-  generateAIOrders,
-  generateAIRetreatChoices,
-  legalRetreatDestinations,
-  powerName,
-  resolveMovement,
-  resolveRetreats,
-  supplyCount,
-  topPower,
-  unitCount,
-  winnerOf,
-  validateAdjustmentPlan,
-  validBuildTypes,
-  validDisbandUnitIds,
-  validMoveTargets,
-  validSupportTargets,
-  type AdjustPlan,
-  type GameState,
-  type Order,
-  type Unit,
-} from "../game/engine";
+import { POWER_MAP, WIN_CENTERS } from "../data/map";
+import { powerName, validMoveTargets, validSupportTargets, type Order, type Unit } from "../game/engine";
 
-interface GameProps {
-  game: GameState;
-  setGame: (g: GameState | null) => void;
-  humanOrders: Record<string, Order>;
-  setHumanOrders: React.Dispatch<React.SetStateAction<Record<string, Order>>>;
-  selectedUnitId: string | null;
-  setSelectedUnitId: (id: string | null) => void;
-  pendingMode: "move" | "support" | null;
-  setPendingMode: (m: "move" | "support" | null) => void;
-  changed: string[];
-  setChanged: (c: string[]) => void;
-  busy: boolean;
-  setBusy: (b: boolean) => void;
-  builds: { type: UnitType; loc: string }[];
-  setBuilds: (b: { type: UnitType; loc: string }[]) => void;
-  disbands: string[];
-  setDisbands: (d: string[]) => void;
-}
+interface GameProps { session: import("../hooks/useGameSession").GameSession; }
 
-export default function Game(props: GameProps) {
-  const {
-    game,
-    setGame,
-    humanOrders,
-    setHumanOrders,
-    selectedUnitId,
-    setSelectedUnitId,
-    pendingMode,
-    setPendingMode,
-    changed,
-    setChanged,
-    busy,
-    setBusy,
-    builds,
-    setBuilds,
-    disbands,
-    setDisbands,
-  } = props;
-
+export default function Game({ session }: GameProps) {
+  const { state, view, dispatch } = session;
+  const game = state.game!;
+  const { orders: humanOrders, selectedUnitId, pendingMode, changed, builds, disbands,
+    retreatChoices, selectedRetreatId } = state;
+  const busy = state.pendingResolution !== null;
+  const { humanUnits, humanDislodged, sc, sortedPowers, buildCenters, canBuildN, mustDisbandN,
+    adjustmentValidation, buildTypesByCenter, disbandableIds, retreatDestinations,
+    orderedCount } = view!;
   const human = game.human;
-  const humanUnits = game.units.filter((u) => u.power === human);
   const selectedUnit = humanUnits.find((u) => u.id === selectedUnitId) ?? null;
-  const sc = supplyCount(game);
-  const uc = unitCount(game);
-  const [retreatChoices, setRetreatChoices] = useState<Record<string, string | null>>({});
-  const [selectedRetreatId, setSelectedRetreatId] = useState<string | null>(null);
-  const humanDislodged = game.dislodged.filter(({ unit }) => unit.power === human);
-  const retreatDestinations = Object.fromEntries(game.dislodged.map((entry) => [
-    entry.unit.id, legalRetreatDestinations(game, entry),
-  ]));
-
   // brief season-change toast
   const toastKey = `${game.season}-${game.year}-${game.phase}`;
   const [showToast, setShowToast] = useState(false);
@@ -104,9 +37,9 @@ export default function Game(props: GameProps) {
   // clear pulse highlights after they have played
   useEffect(() => {
     if (changed.length === 0) return;
-    const t = setTimeout(() => setChanged([]), 4200);
+    const t = setTimeout(() => dispatch({ type: "CLEAR_CHANGED" }), 4200);
     return () => clearTimeout(t);
-  }, [changed, setChanged]);
+  }, [changed, dispatch]);
 
   const highlightMove = useMemo(() => {
     if (game.phase === "Retreat" && selectedRetreatId) {
@@ -125,8 +58,7 @@ export default function Game(props: GameProps) {
     return new Set<string>();
   }, [pendingMode, selectedUnit, game.units, humanOrders]);
 
-  const setOrder = (unitId: string, order: Order) =>
-    setHumanOrders((prev) => ({ ...prev, [unitId]: order }));
+  const setOrder = (unitId: string, order: Order) => dispatch({ type: "SET_ORDER", unitId, order });
 
   const supportOrderFor = (loc: string): Order | null => {
     const supported = game.units.find((unit) => unit.loc === loc);
@@ -140,28 +72,28 @@ export default function Game(props: GameProps) {
   const onProvince = (id: string) => {
     if (game.phase === "Retreat") {
       if (selectedRetreatId && (retreatDestinations[selectedRetreatId] ?? []).includes(id)) {
-        setRetreatChoices((previous) => ({ ...previous, [selectedRetreatId]: id }));
-        setSelectedRetreatId(null);
+        dispatch({ type: "SET_RETREAT", unitId: selectedRetreatId, destination: id });
+        dispatch({ type: "SELECT_RETREAT", unitId: null });
       }
       return;
     }
     if (game.phase === "Adjust") {
       const u = game.units.find((x) => x.power === human && x.loc === id);
       if (u) {
-        if (disbands.includes(u.id)) setDisbands(disbands.filter((d) => d !== u.id));
-        else if (disbands.length < mustDisbandN && disbandableIds.has(u.id)) setDisbands([...disbands, u.id]);
+        if (disbandableIds.has(u.id)) dispatch({ type: "TOGGLE_DISBAND", unitId: u.id });
         return;
       }
       if (buildCenters.includes(id)) {
         const existing = builds.find(b => b.loc === id);
         if (existing) {
           if (existing.type === "A" && buildTypesByCenter[id]?.includes("F")) {
-            setBuilds(builds.map(b => b.loc === id ? { ...b, type: "F" } : b));
+            dispatch({ type: "REMOVE_BUILD", loc: id });
+            dispatch({ type: "ADD_BUILD", build: { type: "F", loc: id } });
           } else {
-            setBuilds(builds.filter(b => b.loc !== id));
+            dispatch({ type: "REMOVE_BUILD", loc: id });
           }
         } else if (builds.length < canBuildN && buildTypesByCenter[id]?.includes("A")) {
-          setBuilds([...builds, { type: "A", loc: id }]);
+          dispatch({ type: "ADD_BUILD", build: { type: "A", loc: id } });
         }
       }
       return;
@@ -172,43 +104,43 @@ export default function Game(props: GameProps) {
       // 1) Support mode target click
       if (pendingMode === "support" && highlightSupport.has(id)) {
         const order = supportOrderFor(id);
-        if (order) setOrder(selectedUnit.id, order);
-        setPendingMode(null);
+        if (order) dispatch({ type: "SET_ORDER", unitId: selectedUnit.id, order });
+        dispatch({ type: "SET_MODE", mode: null });
         return;
       }
 
       // 2) Clicked the unit's OWN province -> Set/toggle to Hold
       if (id === selectedUnit.loc) {
-        setOrder(selectedUnit.id, { type: "hold" });
-        setPendingMode(null);
+        dispatch({ type: "SET_ORDER", unitId: selectedUnit.id, order: { type: "hold" } });
+        dispatch({ type: "SET_MODE", mode: null });
         return;
       }
 
       // 3) Clicked a legal move destination province (e.g. neighbouring province)
       if (highlightMove.has(id)) {
         setOrder(selectedUnit.id, { type: "move", to: id });
-        setPendingMode(null);
+        dispatch({ type: "SET_MODE", mode: null });
         return;
       }
 
       // 4) Clicked another province that has a friendly unit
       const friendlyUnit = game.units.find((x) => x.power === human && x.loc === id);
       if (friendlyUnit) {
-        setSelectedUnitId(friendlyUnit.id);
-        setPendingMode(null);
+        dispatch({ type: "SELECT_UNIT", unitId: friendlyUnit.id });
+        dispatch({ type: "SET_MODE", mode: null });
         return;
       }
 
       // 5) Clicked an invalid / non-adjacent empty province -> Deselect
-      setSelectedUnitId(null);
-      setPendingMode(null);
+      dispatch({ type: "SELECT_UNIT", unitId: null });
+      dispatch({ type: "SET_MODE", mode: null });
       return;
     }
 
     // No unit currently selected: select the human unit at `id` if present
     const u = game.units.find((x) => x.power === human && x.loc === id);
-    setSelectedUnitId(u ? u.id : null);
-    setPendingMode(null);
+    dispatch({ type: "SELECT_UNIT", unitId: u ? u.id : null });
+    dispatch({ type: "SET_MODE", mode: null });
   };
 
   const onUnit = (u: Unit) => {
@@ -217,8 +149,7 @@ export default function Game(props: GameProps) {
       return;
     }
     if (game.phase === "Adjust" && u.power === human) {
-      if (disbands.includes(u.id)) setDisbands(disbands.filter((d) => d !== u.id));
-      else if (disbands.length < mustDisbandN && disbandableIds.has(u.id)) setDisbands([...disbands, u.id]);
+      if (disbandableIds.has(u.id)) dispatch({ type: "TOGGLE_DISBAND", unitId: u.id });
       return;
     }
     if (game.phase !== "Order") return;
@@ -227,8 +158,8 @@ export default function Game(props: GameProps) {
       // Friendly unit clicked
       if (pendingMode === "support" && selectedUnit && highlightSupport.has(u.loc)) {
         const order = supportOrderFor(u.loc);
-        if (order) setOrder(selectedUnit.id, order);
-        setPendingMode(null);
+        if (order) dispatch({ type: "SET_ORDER", unitId: selectedUnit.id, order });
+        dispatch({ type: "SET_MODE", mode: null });
         return;
       }
 
@@ -236,15 +167,15 @@ export default function Game(props: GameProps) {
         // Clicked the currently selected unit itself -> toggle hold or deselect if already holding
         const currentOrder = humanOrders[u.id];
         if (!currentOrder || currentOrder.type === "hold") {
-          setSelectedUnitId(null);
+          dispatch({ type: "SELECT_UNIT", unitId: null });
         } else {
-          setOrder(u.id, { type: "hold" });
+          dispatch({ type: "SET_ORDER", unitId: u.id, order: { type: "hold" } });
         }
-        setPendingMode(null);
+        dispatch({ type: "SET_MODE", mode: null });
       } else {
         // Switch selection to this friendly unit
-        setSelectedUnitId(u.id);
-        setPendingMode(null);
+        dispatch({ type: "SELECT_UNIT", unitId: u.id });
+        dispatch({ type: "SET_MODE", mode: null });
       }
     } else {
       // Enemy unit clicked -> Delegate to onProvince to handle move/support target
@@ -252,125 +183,11 @@ export default function Game(props: GameProps) {
     }
   };
 
-  // ---- AI winter adjustments ---------------------------------------------
-  const aiAdjustments = (state: GameState): AdjustPlan => {
-    const plan: AdjustPlan = { builds: [], disbands: [] };
-    const scNow = supplyCount(state);
-    const ucNow = unitCount(state);
-    for (const p of GREAT_POWERS) {
-      if (p === state.human) continue;
-      const diff = scNow[p] - ucNow[p];
-      if (diff > 0) {
-        for (const loc of emptyHomeCenters(state, p).slice(0, diff)) {
-          plan.builds.push({ power: p, type: PROVINCE_MAP[loc].fleetAdj.length > 0 ? "F" : "A", loc });
-        }
-      } else if (diff < 0) {
-        let toRemove = -diff;
-        const mine = state.units.filter((u) => u.power === p);
-        const order = [
-          ...mine.filter((u) => state.centers[u.loc] !== p),
-          ...mine.filter((u) => state.centers[u.loc] === p),
-        ];
-        for (const u of order) {
-          if (toRemove <= 0) break;
-          plan.disbands.push(u.id);
-          toRemove--;
-        }
-      }
-    }
-    return plan;
-  };
-
-  const advanceAfterMovement = (moved: GameState, movementChanged: string[]) => {
-    if (moved.season === "Spring") {
-      setChanged(movementChanged);
-      setGame({ ...moved, season: "Fall", phase: "Order", dislodged: [] });
-      return;
-    }
-    const fall = applyFallOwnership(moved);
-    const ownMsgs = fall.changed.map((id) => `${PROVINCE_MAP[id].name} now belongs to ${POWER_MAP[fall.centers[id]].name}.`);
-    let g: GameState = { ...moved, centers: fall.centers, log: [...moved.log, ...ownMsgs], phase: "Adjust", season: "Fall", dislodged: [] };
-    g = applyAdjustments(g, aiAdjustments(g));
-    const winner = winnerOf(g);
-    const defeated = g.units.filter((u) => u.power === human).length === 0 && supplyCount(g)[human] === 0;
-    if (winner || defeated) {
-      g = { ...g, winner: winner ?? topPower(g), defeat: !winner || winner !== human, phase: "GameOver", log: [...g.log, winner ? `${powerName(winner)} controls ${WIN_CENTERS} supply centres — the war is won.` : `${powerName(human)} has been swept from the map.`] };
-    }
-    setChanged(Array.from(new Set([...movementChanged, ...fall.changed])));
-    setGame(g);
-    setBuilds([]);
-    setDisbands([]);
-  };
-
-  // ---- resolve a movement turn ---------------------------------------------
-  const resolveTurn = () => {
-    if (busy) return;
-    setBusy(true);
-    setSelectedUnitId(null);
-    setPendingMode(null);
-    window.setTimeout(() => {
-      const orders: Record<string, Order> = {};
-      for (const u of game.units) {
-        if (u.power === human) orders[u.id] = humanOrders[u.id] ?? { type: "hold" };
-      }
-      const ai = generateAIOrders(game);
-      for (const k of Object.keys(ai)) orders[k] = ai[k];
-
-      const res = resolveMovement(game, orders);
-      const newLog = [...game.log, `──── ${game.season} ${game.year} resolves ────`, ...res.events];
-      const moved = { ...game, units: res.units, dislodged: res.dislodged, log: newLog };
-      if (res.dislodged.length > 0) {
-        setGame({ ...moved, phase: "Retreat" });
-        setRetreatChoices({});
-      } else advanceAfterMovement(moved, res.changed);
-      setHumanOrders({});
-      setBusy(false);
-    }, 650);
-  };
-
-  const confirmRetreats = () => {
-    const choices = { ...generateAIRetreatChoices(game), ...retreatChoices };
-    const resolved = resolveRetreats(game, choices);
-    setRetreatChoices({});
-    setSelectedRetreatId(null);
-    advanceAfterMovement(resolved, game.dislodged.map(({ unit }) => unit.loc));
-  };
-
-  // ---- winter builds / disbands ---------------------------------------------
-  const buildCenters = emptyHomeCenters(game, human);
-  const canBuildN = Math.min(Math.max(0, sc[human] - uc[human]), buildCenters.length);
-  const mustDisbandN = Math.max(0, uc[human] - sc[human]);
-  const adjustmentPlan: AdjustPlan = {
-    builds: builds.map((b) => ({ power: human, ...b })),
-    disbands,
-  };
-  const adjustmentValidation = validateAdjustmentPlan(game, human, adjustmentPlan, true);
+  const resolveTurn = () => dispatch({ type: "RESOLVE_REQUEST" });
+  const confirmRetreats = () => dispatch({ type: "CONFIRM_RETREATS" });
   const adjustValid = adjustmentValidation.valid;
-  const buildTypesByCenter = Object.fromEntries(buildCenters.map((loc) => [loc, validBuildTypes(game, human, loc)]));
-  const disbandableIds = new Set(validDisbandUnitIds(game, human));
+  const confirmAdjust = () => dispatch({ type: "CONFIRM_ADJUSTMENTS" });
 
-  const confirmAdjust = () => {
-    if (!adjustValid) return;
-    let g = applyAdjustments(game, adjustmentPlan);
-    const ny = game.year + 1;
-    g = {
-      ...g,
-      year: ny,
-      season: "Spring",
-      phase: "Order",
-      log: [...g.log, `Winter ${game.year} passes — the campaign of ${ny} begins.`],
-    };
-    setGame(g);
-    setBuilds([]);
-    setDisbands([]);
-    setHumanOrders({});
-    setSelectedUnitId(null);
-    setPendingMode(null);
-    setChanged([]);
-  };
-
-  const sortedPowers = [...GREAT_POWERS].sort((a, b) => sc[b] - sc[a]);
-  const orderedCount = humanUnits.filter((u) => humanOrders[u.id]).length;
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#1c1a16] text-slate-200">
@@ -448,7 +265,7 @@ export default function Game(props: GameProps) {
                     : `${WIN_CENTERS} supply centres fly your colours. The Concert of Europe plays to your tune now.`}
                 </p>
                 <button
-                  onClick={() => setGame(null)}
+                  onClick={() => dispatch({ type: "RESET" })}
                   className="mt-6 rounded-xl bg-amber-500 px-6 py-3 text-sm font-bold tracking-wide text-[#241a05] shadow-lg shadow-amber-900/50 transition hover:bg-amber-400 hover:-translate-y-0.5"
                 >
                   Return to the War Room
@@ -481,7 +298,7 @@ export default function Game(props: GameProps) {
                 </div>
               </div>
               <button
-                onClick={() => setGame(null)}
+                onClick={() => dispatch({ type: "RESET" })}
                 className="rounded-xl border border-white/10 px-3 py-2 text-xs font-medium text-slate-400 transition hover:bg-white/10 hover:text-slate-200"
               >
                 Menu
@@ -526,16 +343,16 @@ export default function Game(props: GameProps) {
                   pendingMode={pendingMode}
                   canMove={highlightMove.size > 0}
                   canSupport={selectedUnit ? validSupportTargets(game, selectedUnit, humanOrders).length > 0 : false}
-                  onSelect={setSelectedUnitId}
+                  onSelect={(unitId) => dispatch({ type: "SELECT_UNIT", unitId })}
                   onHold={() => {
                     if (selectedUnit) {
-                      setOrder(selectedUnit.id, { type: "hold" });
-                      setPendingMode(null);
+                      dispatch({ type: "SET_ORDER", unitId: selectedUnit.id, order: { type: "hold" } });
+                      dispatch({ type: "SET_MODE", mode: null });
                     }
                   }}
-                  onMove={() => setPendingMode("move")}
-                  onSupport={() => setPendingMode("support")}
-                  onClearAll={() => setHumanOrders({})}
+                  onMove={() => dispatch({ type: "SET_MODE", mode: "move" })}
+                  onSupport={() => dispatch({ type: "SET_MODE", mode: "support" })}
+                  onClearAll={() => dispatch({ type: "CLEAR_ORDERS" })}
                 />
               )}
 
@@ -551,26 +368,9 @@ export default function Game(props: GameProps) {
                   errors={adjustmentValidation.errors}
                   buildTypesByCenter={buildTypesByCenter}
                   disbandableIds={disbandableIds}
-                  onBuild={(b) => {
-                    const proposed = [...builds, b];
-                    const result = validateAdjustmentPlan(game, human, {
-                      builds: proposed.map((build) => ({ power: human, ...build })),
-                      disbands,
-                    });
-                    if (result.valid) setBuilds(proposed);
-                  }}
-                  onRemoveBuild={(loc) => setBuilds(builds.filter((b) => b.loc !== loc))}
-                  onToggleDisband={(id) => {
-                    if (disbands.includes(id)) setDisbands(disbands.filter((d) => d !== id));
-                    else {
-                      const proposed = [...disbands, id];
-                      const result = validateAdjustmentPlan(game, human, {
-                        builds: builds.map((build) => ({ power: human, ...build })),
-                        disbands: proposed,
-                      });
-                      if (result.valid) setDisbands(proposed);
-                    }
-                  }}
+                  onBuild={(build) => dispatch({ type: "ADD_BUILD", build })}
+                  onRemoveBuild={(loc) => dispatch({ type: "REMOVE_BUILD", loc })}
+                  onToggleDisband={(unitId) => dispatch({ type: "TOGGLE_DISBAND", unitId })}
                   onConfirm={confirmAdjust}
                   year={game.year}
                 />
@@ -582,8 +382,8 @@ export default function Game(props: GameProps) {
                   choices={retreatChoices}
                   destinations={retreatDestinations}
                   selectedId={selectedRetreatId}
-                  onSelect={setSelectedRetreatId}
-                  onDisband={(id) => setRetreatChoices((previous) => ({ ...previous, [id]: null }))}
+                  onSelect={(unitId) => dispatch({ type: "SELECT_RETREAT", unitId })}
+                  onDisband={(unitId) => dispatch({ type: "SET_RETREAT", unitId, destination: null })}
                   onConfirm={confirmRetreats}
                 />
               )}
