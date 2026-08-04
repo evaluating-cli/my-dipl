@@ -1,0 +1,6 @@
+{
+  "name": "Diplomacy Board Game",
+  "description": "Interactive Diplomacy strategy game board with turn orders, map rendering, phase progression, and log controls.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

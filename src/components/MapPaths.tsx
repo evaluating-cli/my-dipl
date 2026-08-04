@@ -4,7 +4,7 @@ import { PROVINCE_PATHS } from "../data/paths";
 
 interface MapPathsProps {
   hoverId: string | null;
-  setHoverId: (id: string | null) => void;
+  setHoverId: React.Dispatch<React.SetStateAction<string | null>>;
   highlightMove: Set<string>;
   highlightSupport: Set<string>;
   changed: string[];

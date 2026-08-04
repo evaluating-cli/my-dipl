@@ -13,7 +13,6 @@ import {
   POWER_MAP,
   PROVINCE_MAP,
   WIN_CENTERS,
-  type PowerId,
   type UnitType,
 } from "../data/map";
 import {

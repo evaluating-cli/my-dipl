@@ -9,13 +9,16 @@ interface SeaNodeProps {
   isMoveT: boolean;
   isSupT: boolean;
   hasUnit: boolean;
+  zoomScale?: number;
   onEnter: () => void;
   onLeave: () => void;
   onClick: () => void;
 }
 
-export const SeaNode = memo(function SeaNode({ p, isHover, isMoveT, isSupT, hasUnit, onEnter, onLeave, onClick }: SeaNodeProps) {
+export const SeaNode = memo(function SeaNode({ p, isHover, isMoveT, isSupT, hasUnit, zoomScale = 1, onEnter, onLeave, onClick }: SeaNodeProps) {
   const labelY = hasUnit ? p.y - 12 : p.y + 4;
+  const textScale = 1 / Math.pow(zoomScale, 0.75);
+
   return (
     <g
       onClick={onClick}
@@ -35,16 +38,18 @@ export const SeaNode = memo(function SeaNode({ p, isHover, isMoveT, isSupT, hasU
           className={isMoveT ? "rd-march" : undefined}
         />
       )}
-      <text
-        x={p.x}
-        y={labelY}
-        textAnchor="middle"
-        fill={isHover ? "#fff" : "#31556e"}
-        style={{ fontSize: 10, fontStyle: "italic", fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase" }}
-        className="select-none drop-shadow-sm"
-      >
-        {p.id}
-      </text>
+      <g transform={`translate(${p.x}, ${labelY}) scale(${textScale})`}>
+        <text
+          x={0}
+          y={0}
+          textAnchor="middle"
+          fill={isHover ? "#fff" : "#31556e"}
+          style={{ fontSize: 10, fontStyle: "italic", fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase" }}
+          className="select-none drop-shadow-sm"
+        >
+          {p.id}
+        </text>
+      </g>
     </g>
   );
 });
@@ -57,14 +62,17 @@ interface LandNodeProps {
   isChanged: boolean;
   hasUnit: boolean;
   supplyOwner: import("../data/map").PowerId | null;
+  zoomScale?: number;
   onEnter: () => void;
   onLeave: () => void;
   onClick: () => void;
 }
 
 export const LandNode = memo(function LandNode({
-  p, isHover, isMoveT, isSupT, isChanged, hasUnit, supplyOwner, onEnter, onLeave, onClick
+  p, isHover, isMoveT, isSupT, isChanged, hasUnit, supplyOwner, zoomScale = 1, onEnter, onLeave, onClick
 }: LandNodeProps) {
+  const textScale = 1 / Math.pow(zoomScale, 0.75);
+
   return (
     <g
       onClick={onClick}
@@ -85,19 +93,21 @@ export const LandNode = memo(function LandNode({
         />
       )}
       
-      <text
-        x={p.x}
-        y={hasUnit ? p.y - 4 : p.y + 4}
-        textAnchor="middle"
-        fill={isHover ? "#000" : "#2c271e"}
-        style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5 }}
-        className="select-none drop-shadow-sm"
-      >
-        {p.id}
-      </text>
+      <g transform={`translate(${p.x}, ${hasUnit ? p.y - 4 : p.y + 4}) scale(${textScale})`}>
+        <text
+          x={0}
+          y={0}
+          textAnchor="middle"
+          fill={isHover ? "#000" : "#2c271e"}
+          style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5 }}
+          className="select-none drop-shadow-sm"
+        >
+          {p.id}
+        </text>
+      </g>
       
       {p.supply && (
-        <g transform={`translate(${p.x - 18}, ${p.y - 8})`}>
+        <g transform={`translate(${p.x - 18}, ${p.y - 8}) scale(${textScale})`}>
           {p.supply === "home" && (
             <circle cx={0} cy={0} r={6.5} fill="none" stroke="#d97706" strokeWidth={1} strokeDasharray="2 2" className="rd-spin" />
           )}
@@ -124,35 +134,38 @@ interface UnitNodeProps {
   selected: boolean;
   isHuman: boolean;
   phase: string;
+  zoomScale?: number;
   onEnter: () => void;
   onClick: (e: React.MouseEvent) => void;
 }
 
 export const UnitNode = memo(function UnitNode({
-  id, type, loc, power, selected, isHuman, phase, onEnter, onClick
+  type, loc, power, selected, isHuman, phase, zoomScale = 1, onEnter, onClick
 }: UnitNodeProps) {
   const p = PROVINCE_MAP[loc];
   const cy = p.kind === "sea" ? p.y + 2 : p.y + 10;
+  const unitScale = 1 / Math.pow(zoomScale, 0.35);
   
   return (
     <g
       onClick={onClick}
       onMouseEnter={onEnter}
       className={isHuman && phase === "Order" ? "cursor-pointer" : undefined}
+      transform={`translate(${p.x}, ${cy}) scale(${unitScale})`}
     >
       {selected && (
-        <circle cx={p.x} cy={cy} r={14} fill="none" stroke="#fbbf24" strokeWidth={2.5} strokeDasharray="5 3" className="rd-spin" />
+        <circle cx={0} cy={0} r={14} fill="none" stroke="#fbbf24" strokeWidth={2.5} strokeDasharray="5 3" className="rd-spin" />
       )}
       <circle
-        cx={p.x}
-        cy={cy}
+        cx={0}
+        cy={0}
         r={10}
         fill={unitColor(power)}
         stroke={selected ? "#fbbf24" : "#fffdf6"}
         strokeWidth={selected ? 2.5 : 1.8}
         style={{ filter: "drop-shadow(0 1px 2px rgba(0,0,0,.3))" }}
       />
-      <g transform={`translate(${p.x}, ${cy}) scale(0.9)`} style={{ pointerEvents: "none" }}>
+      <g transform="scale(0.9)" style={{ pointerEvents: "none" }}>
         {type === "A" ? (
           <g>
             <path d="M -4,-5 L 4,-5 C 4,-5 4,1 2.5,3.5 C 1,5 0,6 0,6 C 0,6 -1,5 -2.5,3.5 C -4,1 -4,-5 -4,-5 Z" fill="#fffdf6" />

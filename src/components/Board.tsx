@@ -1,5 +1,6 @@
 import { SeaNode, LandNode, UnitNode } from "./MapNodes";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef, useEffect, useCallback } from "react";
+import { RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
 import {
   POWER_MAP,
   PROVINCE_MAP,
@@ -61,6 +62,178 @@ export default function Board(props: BoardProps) {
 
   const [hoverId, setHoverId] = useState<string | null>(null);
 
+  // ---------------------------------------------------------------------------
+  // Zoom & Pan State
+  // ---------------------------------------------------------------------------
+  const [zoomScale, setZoomScale] = useState<number>(1.0);
+  const [panOffset, setPanOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const isPointerDownRef = useRef<boolean>(false);
+  const pointerStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const panStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const hasDraggedRef = useRef<boolean>(false);
+  const ignoreClickRef = useRef<boolean>(false);
+
+  // Dynamic ViewBox calculations
+  const baseW = 920;
+  const baseH = 820;
+  const curW = baseW / zoomScale;
+  const curH = baseH / zoomScale;
+  const centerX = 450 + panOffset.x;
+  const centerY = 400 + panOffset.y;
+  const vx = centerX - curW / 2;
+  const vy = centerY - curH / 2;
+  const viewBox = `${vx} ${vy} ${curW} ${curH}`;
+
+  const handleZoomIn = useCallback(() => {
+    setZoomScale((prev) => Math.min(3.5, Number((prev * 1.25).toFixed(2))));
+  }, []);
+
+  const handleZoomOut = useCallback(() => {
+    setZoomScale((prev) => Math.max(0.75, Number((prev / 1.25).toFixed(2))));
+  }, []);
+
+  const handleResetZoom = useCallback(() => {
+    setZoomScale(1.0);
+    setPanOffset({ x: 0, y: 0 });
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // Drag to Pan Handlers
+  // ---------------------------------------------------------------------------
+  const handlePointerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0 && e.pointerType === "mouse") return;
+    isPointerDownRef.current = true;
+    hasDraggedRef.current = false;
+    pointerStartRef.current = { x: e.clientX, y: e.clientY };
+    panStartRef.current = { ...panOffset };
+  };
+
+  useEffect(() => {
+    const handlePointerMove = (e: PointerEvent) => {
+      if (!isPointerDownRef.current || !containerRef.current) return;
+      const dx = e.clientX - pointerStartRef.current.x;
+      const dy = e.clientY - pointerStartRef.current.y;
+      const dist = Math.hypot(dx, dy);
+
+      if (dist > 4) {
+        hasDraggedRef.current = true;
+        setIsDragging(true);
+      }
+
+      if (hasDraggedRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        const svgW = baseW / zoomScale;
+        const svgH = baseH / zoomScale;
+        const scaleX = svgW / rect.width;
+        const scaleY = svgH / rect.height;
+
+        const newPanX = panStartRef.current.x - dx * scaleX;
+        const newPanY = panStartRef.current.y - dy * scaleY;
+
+        const maxPanX = 550;
+        const maxPanY = 450;
+        setPanOffset({
+          x: Math.max(-maxPanX, Math.min(maxPanX, newPanX)),
+          y: Math.max(-maxPanY, Math.min(maxPanY, newPanY)),
+        });
+      }
+    };
+
+    const handlePointerUp = () => {
+      if (isPointerDownRef.current) {
+        isPointerDownRef.current = false;
+        setIsDragging(false);
+        if (hasDraggedRef.current) {
+          ignoreClickRef.current = true;
+          setTimeout(() => {
+            ignoreClickRef.current = false;
+          }, 120);
+        }
+      }
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    };
+  }, [panOffset, zoomScale]);
+
+  // Wheel zoom centered at mouse cursor
+  const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    if (!containerRef.current) return;
+
+    const zoomFactor = e.deltaY < 0 ? 1.15 : 0.87;
+    const newScale = Math.max(0.75, Math.min(3.5, Number((zoomScale * zoomFactor).toFixed(2))));
+    if (newScale === zoomScale) return;
+
+    const rect = containerRef.current.getBoundingClientRect();
+    const mouseXRatio = (e.clientX - rect.left) / rect.width;
+    const mouseYRatio = (e.clientY - rect.top) / rect.height;
+
+    const svgW = baseW / zoomScale;
+    const svgH = baseH / zoomScale;
+    const svgMouseX = vx + mouseXRatio * svgW;
+    const svgMouseY = vy + mouseYRatio * svgH;
+
+    const newSvgW = baseW / newScale;
+    const newSvgH = baseH / newScale;
+    const newVx = svgMouseX - mouseXRatio * newSvgW;
+    const newVy = svgMouseY - mouseYRatio * newSvgH;
+
+    const newCenterX = newVx + newSvgW / 2;
+    const newCenterY = newVy + newSvgH / 2;
+
+    const maxPanX = 550;
+    const maxPanY = 450;
+    setZoomScale(newScale);
+    setPanOffset({
+      x: Math.max(-maxPanX, Math.min(maxPanX, newCenterX - 450)),
+      y: Math.max(-maxPanY, Math.min(maxPanY, newCenterY - 400)),
+    });
+  };
+
+  // Keyboard zoom & pan shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (["INPUT", "TEXTAREA"].includes((e.target as HTMLElement)?.tagName)) return;
+
+      if (e.key === "+" || e.key === "=") {
+        e.preventDefault();
+        handleZoomIn();
+      } else if (e.key === "-" || e.key === "_") {
+        e.preventDefault();
+        handleZoomOut();
+      } else if (e.key === "0" || e.key === "r" || e.key === "R") {
+        e.preventDefault();
+        handleResetZoom();
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        setPanOffset((p) => ({ ...p, x: Math.max(-550, p.x - 60 / zoomScale) }));
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        setPanOffset((p) => ({ ...p, x: Math.min(550, p.x + 60 / zoomScale) }));
+      } else if (e.key === "ArrowUp") {
+        e.preventDefault();
+        setPanOffset((p) => ({ ...p, y: Math.max(-450, p.y - 60 / zoomScale) }));
+      } else if (e.key === "ArrowDown") {
+        e.preventDefault();
+        setPanOffset((p) => ({ ...p, y: Math.min(450, p.y + 60 / zoomScale) }));
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handleZoomIn, handleZoomOut, handleResetZoom, zoomScale]);
+
   const unitsByLoc = useMemo(() => {
     const m: Record<string, Unit> = {};
     for (const u of game.units) m[u.loc] = u;
@@ -92,11 +265,11 @@ export default function Board(props: BoardProps) {
   const selectedUnit = game.units.find((u) => u.id === selectedUnitId) ?? null;
 
   const handleProvince = (id: string) => {
-    if (busy) return;
+    if (busy || ignoreClickRef.current) return;
     props.onProvince(id);
   };
   const handleUnit = (u: Unit) => {
-    if (busy) return;
+    if (busy || ignoreClickRef.current) return;
     if (pendingMode) {
       props.onProvince(u.loc);
     } else {
@@ -126,7 +299,6 @@ export default function Board(props: BoardProps) {
     const cy = my + oy;
     return {
       d: `M ${a.x} ${a.y} Q ${cx} ${cy} ${b.x} ${b.y}`,
-      // point at t=0.5 on the quadratic bezier
       bx: 0.25 * a.x + 0.5 * cx + 0.25 * b.x,
       by: 0.25 * a.y + 0.5 * cy + 0.25 * b.y,
     };
@@ -137,11 +309,16 @@ export default function Board(props: BoardProps) {
 
   // ---------------------------------------------------------------------------
   return (
-    <div className="absolute inset-0 bg-[#efe6cd] select-none overflow-hidden">
+    <div
+      ref={containerRef}
+      className="absolute inset-0 bg-[#efe6cd] select-none overflow-hidden touch-none"
+      onWheel={handleWheel}
+      onPointerDown={handlePointerDown}
+    >
       <svg
-        viewBox="-10 -10 920 820"
+        viewBox={viewBox}
         preserveAspectRatio="xMidYMid slice"
-        className="block h-full w-full"
+        className={`block h-full w-full ${isDragging ? "cursor-grabbing" : "cursor-grab"}`}
         style={{ opacity: busy ? 0.55 : 1, transition: "opacity .3s" }}
         onMouseLeave={() => setHoverId(null)}
       >
@@ -168,7 +345,7 @@ export default function Board(props: BoardProps) {
               </marker>
             </defs>
 
-            <rect x={-200} y={-200} width={MAP_W + 400} height={MAP_H + 400} fill="url(#paper)" />
+            <rect x={-600} y={-600} width={MAP_W + 1200} height={MAP_H + 1200} fill="url(#paper)" />
 
             <MapPaths
               hoverId={hoverId}
@@ -183,21 +360,20 @@ export default function Board(props: BoardProps) {
             {/* Subtle latitude/longitude coordinates grid */}
             <g stroke="#a59169" strokeWidth={0.5} strokeDasharray="1 11" opacity={0.35}>
               {/* Horizontal lines */}
-              <line x1={-200} y1={200} x2={MAP_W + 200} y2={200} />
-              <line x1={-200} y1={400} x2={MAP_W + 200} y2={400} />
-              <line x1={-200} y1={600} x2={MAP_W + 200} y2={600} />
+              <line x1={-600} y1={200} x2={MAP_W + 600} y2={200} />
+              <line x1={-600} y1={400} x2={MAP_W + 600} y2={400} />
+              <line x1={-600} y1={600} x2={MAP_W + 600} y2={600} />
               {/* Vertical lines */}
-              <line x1={300} y1={-200} x2={300} y2={MAP_H + 200} />
-              <line x1={600} y1={-200} x2={600} y2={MAP_H + 200} />
-              <line x1={900} y1={-200} x2={900} y2={MAP_H + 200} />
+              <line x1={300} y1={-600} x2={300} y2={MAP_H + 600} />
+              <line x1={600} y1={-600} x2={600} y2={MAP_H + 600} />
+              <line x1={900} y1={-600} x2={900} y2={MAP_H + 600} />
             </g>
 
-            {/* Grand Vintage Compass Rose (Placed in open bottom-left Atlantic) */}
+            {/* Grand Vintage Compass Rose */}
             <g transform="translate(110, 750)" stroke="#a08c60" fill="none" opacity={0.65}>
           <circle cx={0} cy={0} r={34} strokeWidth={0.8} />
           <circle cx={0} cy={0} r={37} strokeWidth={0.4} strokeDasharray="2 3" />
           <circle cx={0} cy={0} r={30} strokeWidth={0.4} />
-          {/* Compass points */}
           <path d="M 0,0 L 4.5,-10 L 0,-33 L -4.5,-10 Z" fill="#8a7a56" strokeWidth={0.4} />
           <path d="M 0,0 L -4.5,10 L 0,33 L 4.5,10 Z" fill="#8a7a56" strokeWidth={0.4} opacity={0.7} />
           <path d="M 0,0 L 10,4.5 L 33,0 L 10,-4.5 Z" fill="#8a7a56" strokeWidth={0.4} opacity={0.8} />
@@ -258,6 +434,7 @@ export default function Board(props: BoardProps) {
               isMoveT={highlightMove.has(p.id)}
               isSupT={highlightSupport.has(p.id)}
               hasUnit={!!unitsByLoc[p.id]}
+              zoomScale={zoomScale}
               onEnter={() => setHoverId(p.id)}
               onLeave={() => setHoverId((h) => (h === p.id ? null : h))}
               onClick={() => handleProvince(p.id)}
@@ -277,6 +454,7 @@ export default function Board(props: BoardProps) {
               isChanged={changed.includes(p.id)}
               hasUnit={!!unitsByLoc[p.id]}
               supplyOwner={game.centers[p.id] ?? null}
+              zoomScale={zoomScale}
               onEnter={() => setHoverId(p.id)}
               onLeave={() => setHoverId((h) => (h === p.id ? null : h))}
               onClick={() => handleProvince(p.id)}
@@ -292,13 +470,14 @@ export default function Board(props: BoardProps) {
               const to = PROVINCE_MAP[o.to];
               const c = curve(from, to);
               const n = 1 + supportCountFor(u);
+              const badgeScale = 1 / Math.pow(zoomScale, 0.75);
               return (
                 <g key={`o-${u.id}`}>
                   <path d={c.d} fill="none" stroke="#d97706" strokeWidth={3.2} strokeDasharray="9 6" markerEnd="url(#arrMove)" className="rd-march" strokeLinecap="round" opacity={0.9} />
                   {n > 1 && (
-                    <g>
-                      <circle cx={c.bx} cy={c.by} r={8.5} fill="#b45309" stroke="#fff" strokeWidth={1.6} />
-                      <text x={c.bx} y={c.by + 3.2} textAnchor="middle" fill="#fff" style={{ fontSize: 10, fontWeight: 800 }}>
+                    <g transform={`translate(${c.bx}, ${c.by}) scale(${badgeScale})`}>
+                      <circle cx={0} cy={0} r={8.5} fill="#b45309" stroke="#fff" strokeWidth={1.6} />
+                      <text x={0} y={3.2} textAnchor="middle" fill="#fff" style={{ fontSize: 10, fontWeight: 800 }}>
                         {n}
                       </text>
                     </g>
@@ -340,6 +519,7 @@ export default function Board(props: BoardProps) {
             selected={u.id === selectedUnitId}
             isHuman={u.power === game.human}
             phase={game.phase}
+            zoomScale={zoomScale}
             onEnter={() => setHoverId(u.loc)}
             onClick={(e) => {
               e.stopPropagation();
@@ -348,6 +528,35 @@ export default function Board(props: BoardProps) {
           />
         ))}
       </svg>
+
+      {/* ---- Interactive Zoom & Pan Controls Overlay ---- */}
+      <div className="absolute top-4 right-4 z-20 flex items-center gap-1.5 rounded-xl border border-[#a08c60]/40 bg-[#f8f1de]/90 p-1.5 shadow-xl backdrop-blur-sm">
+        <button
+          onClick={handleZoomIn}
+          title="Zoom In (+)"
+          className="rd-mapbtn"
+          aria-label="Zoom in"
+        >
+          <ZoomIn size={15} />
+        </button>
+        <button
+          onClick={handleZoomOut}
+          title="Zoom Out (-)"
+          className="rd-mapbtn"
+          aria-label="Zoom out"
+        >
+          <ZoomOut size={15} />
+        </button>
+        <button
+          onClick={handleResetZoom}
+          title="Reset Zoom & Recenter (0 / R)"
+          className="flex items-center gap-1.5 rounded-lg border border-[#a08c60]/60 bg-[#f8f1de] px-2.5 py-1 text-[11px] font-bold text-[#5c5140] shadow-sm transition hover:bg-[#fff8e6] active:scale-95"
+          aria-label="Reset zoom"
+        >
+          <span>{Math.round(zoomScale * 100)}%</span>
+          <RotateCcw size={12} className="text-[#8a7a56] shrink-0" />
+        </button>
+      </div>
 
       {/* ---- cartouche (hover info) ---- */}
       <div className="pointer-events-none absolute left-4 top-4 z-10 min-w-[200px] max-w-[240px] rounded-xl border border-[#a08c60]/50 bg-[#f8f1de]/90 px-4 py-3 shadow-2xl backdrop-blur-sm">
@@ -429,3 +638,4 @@ function HintPill({
     </div>
   );
 }
+

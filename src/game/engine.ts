@@ -351,17 +351,11 @@ export function applyFallOwnership(state: GameState): {
 
   for (const id of Object.keys(centers)) {
     const p = PROVINCE_MAP[id];
-    if (!p.supply) continue;
+    if (!p || !p.supply) continue;
     const occupant = unitAt[id];
-    if (p.supply === "home") {
-      const home = p.owner as PowerId;
-      const next = occupant && occupant.power !== home ? occupant.power : home;
-      if (centers[id] !== next) changed.push(id);
-      centers[id] = next;
-    } else {
-      const next = occupant ? occupant.power : "NEU";
-      if (centers[id] !== next) changed.push(id);
-      centers[id] = next;
+    if (occupant && centers[id] !== occupant.power) {
+      centers[id] = occupant.power;
+      changed.push(id);
     }
   }
   return { centers, changed };
