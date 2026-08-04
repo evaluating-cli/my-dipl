@@ -2,7 +2,7 @@ import { Hand, ArrowRight, LifeBuoy, Swords, X } from "lucide-react";
 import UnitToken from "./UnitToken";
 import Panel from "./Panel";
 import { provName, type Unit, type Order } from "../game/engine";
-import { orderText } from "./Board";
+import { orderText } from "./board/formatting";
 
 interface OrderPanelProps {
   units: Unit[];

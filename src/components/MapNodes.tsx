@@ -1,5 +1,5 @@
 import React, { memo } from "react";
-import { unitColor } from "./Board";
+import { unitColor } from "./board/formatting";
 
 import { PROVINCE_MAP,  type Province, type UnitType } from "../data/map";
 
