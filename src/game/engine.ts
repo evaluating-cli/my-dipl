@@ -27,6 +27,27 @@ export interface Order {
   supLoc?: string; // province of the supported unit
 }
 
+export type ValidationErrorCode =
+  | "UNKNOWN_UNIT" | "WRONG_POWER" | "INVALID_ORDER_TYPE" | "MISSING_TARGET"
+  | "ILLEGAL_DESTINATION" | "NO_UNIT_TO_SUPPORT" | "TOO_MANY_BUILDS"
+  | "TOO_MANY_DISBANDS" | "INCOMPLETE_ADJUSTMENT" | "DUPLICATE_BUILD"
+  | "DUPLICATE_DISBAND" | "OCCUPIED_CENTER" | "INELIGIBLE_HOME_CENTER"
+  | "INVALID_UNIT_TYPE" | "FLEET_REQUIRES_COAST";
+
+export interface ValidationError {
+  code: ValidationErrorCode;
+  message: string;
+  unitId?: string;
+  loc?: string;
+  index?: number;
+}
+
+export interface ValidationResult<T> {
+  valid: boolean;
+  value?: T;
+  errors: ValidationError[];
+}
+
 export type Phase = "Order" | "Adjust" | "GameOver";
 export type Season = "Spring" | "Fall";
 
@@ -73,6 +94,51 @@ export function legalTargets(u: Unit): string[] {
     if (u.type === "A") return t.kind === "land";
     return t.coast;
   });
+}
+
+/** Pure validation for a single movement-phase order. */
+export function validateMovementOrder(
+  state: GameState,
+  unit: Unit,
+  candidate: unknown,
+): ValidationResult<Order> {
+  const fail = (error: ValidationError): ValidationResult<Order> => ({ valid: false, errors: [error] });
+  if (!state.units.some((u) => u.id === unit.id)) {
+    return fail({ code: "UNKNOWN_UNIT", unitId: unit.id, message: `Unit ${unit.id} is not in this game.` });
+  }
+  if (!candidate || typeof candidate !== "object" || !("type" in candidate)) {
+    return fail({ code: "INVALID_ORDER_TYPE", unitId: unit.id, message: "The order type is missing or invalid." });
+  }
+  const order = candidate as Partial<Order>;
+  if (order.type === "hold") return { valid: true, value: { type: "hold" }, errors: [] };
+  if (order.type === "move") {
+    if (typeof order.to !== "string") return fail({ code: "MISSING_TARGET", unitId: unit.id, message: "A move requires a destination." });
+    if (!legalTargets(unit).includes(order.to)) return fail({ code: "ILLEGAL_DESTINATION", unitId: unit.id, loc: order.to, message: `${unitLabel(unit)} cannot move to ${provName(order.to)}.` });
+    return { valid: true, value: { type: "move", to: order.to }, errors: [] };
+  }
+  if (order.type === "support") {
+    if (typeof order.supLoc !== "string") return fail({ code: "MISSING_TARGET", unitId: unit.id, message: "A support order requires a unit to support." });
+    if (!neighbours(unit.loc).includes(order.supLoc)) return fail({ code: "ILLEGAL_DESTINATION", unitId: unit.id, loc: order.supLoc, message: `${unitLabel(unit)} cannot support ${provName(order.supLoc)}.` });
+    if (!state.units.some((u) => u.loc === order.supLoc)) return fail({ code: "NO_UNIT_TO_SUPPORT", unitId: unit.id, loc: order.supLoc, message: `There is no unit in ${provName(order.supLoc)} to support.` });
+    return { valid: true, value: { type: "support", supLoc: order.supLoc }, errors: [] };
+  }
+  return fail({ code: "INVALID_ORDER_TYPE", unitId: unit.id, message: "The order type is invalid." });
+}
+
+export function validMoveTargets(state: GameState, unit: Unit): string[] {
+  return neighbours(unit.loc).filter((to) => validateMovementOrder(state, unit, { type: "move", to }).valid);
+}
+
+export function validSupportTargets(state: GameState, unit: Unit): string[] {
+  return neighbours(unit.loc).filter((supLoc) => validateMovementOrder(state, unit, { type: "support", supLoc }).valid);
+}
+
+/** Invalid, missing, and foreign order keys are harmless: every affected unit holds. */
+export function normalizeMovementOrders(state: GameState, orders: Record<string, unknown>): Record<string, Order> {
+  return Object.fromEntries(state.units.map((unit) => {
+    const checked = validateMovementOrder(state, unit, orders[unit.id]);
+    return [unit.id, checked.valid ? checked.value! : { type: "hold" }];
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -157,6 +223,7 @@ export function resolveMovement(
   orders: Record<string, Order>,
 ): MovementResult {
   const units = state.units;
+  orders = normalizeMovementOrders(state, orders);
   const events: string[] = [];
   const unitAt: Record<string, Unit> = {};
   for (const u of units) unitAt[u.loc] = u;
@@ -453,12 +520,69 @@ export interface AdjustPlan {
 
 export function emptyHomeCenters(state: GameState, power: PowerId): string[] {
   const occupied = new Set(state.units.map((u) => u.loc));
-  return HOME_SUPPLY[power as Exclude<PowerId, "NEU">].filter(
+  return (HOME_SUPPLY[power as Exclude<PowerId, "NEU">] ?? []).filter(
     (c) => state.centers[c] === power && !occupied.has(c),
   );
 }
 
+/** Validate one power's winter plan without mutating game state. */
+export function validateAdjustmentPlan(
+  state: GameState,
+  power: PowerId,
+  plan: AdjustPlan,
+  requireComplete = false,
+): ValidationResult<AdjustPlan> {
+  const errors: ValidationError[] = [];
+  const delta = supplyCount(state)[power] - unitCount(state)[power];
+  const allowedBuilds = Math.max(0, delta);
+  const requiredDisbands = Math.max(0, -delta);
+  if (plan.builds.length > allowedBuilds) errors.push({ code: "TOO_MANY_BUILDS", message: `${powerName(power)} may build at most ${allowedBuilds} unit(s).` });
+  if (plan.disbands.length > requiredDisbands) errors.push({ code: "TOO_MANY_DISBANDS", message: `${powerName(power)} may disband at most ${requiredDisbands} unit(s).` });
+  if (requireComplete && (plan.builds.length !== Math.min(allowedBuilds, emptyHomeCenters(state, power).length) || plan.disbands.length !== requiredDisbands)) {
+    errors.push({ code: "INCOMPLETE_ADJUSTMENT", message: "The required winter adjustments have not all been selected." });
+  }
+  const occupied = new Set(state.units.map((u) => u.loc));
+  const buildLocs = new Set<string>();
+  plan.builds.forEach((build, index) => {
+    if (build.power !== power) errors.push({ code: "WRONG_POWER", index, loc: build.loc, message: "A build cannot be submitted for another power." });
+    if (buildLocs.has(build.loc)) errors.push({ code: "DUPLICATE_BUILD", index, loc: build.loc, message: `Only one unit may be built in ${provName(build.loc)}.` });
+    buildLocs.add(build.loc);
+    if (!(HOME_SUPPLY[power as Exclude<PowerId, "NEU">] ?? []).includes(build.loc) || state.centers[build.loc] !== power) {
+      errors.push({ code: "INELIGIBLE_HOME_CENTER", index, loc: build.loc, message: `${provName(build.loc)} is not an eligible owned home centre.` });
+    }
+    if (occupied.has(build.loc)) errors.push({ code: "OCCUPIED_CENTER", index, loc: build.loc, message: `${provName(build.loc)} is occupied.` });
+    if (build.type !== "A" && build.type !== "F") errors.push({ code: "INVALID_UNIT_TYPE", index, loc: build.loc, message: "Unit type must be army or fleet." });
+    if (build.type === "F" && !PROVINCE_MAP[build.loc]?.coast) errors.push({ code: "FLEET_REQUIRES_COAST", index, loc: build.loc, message: `A fleet cannot be built in inland ${provName(build.loc)}.` });
+  });
+  const ids = new Set<string>();
+  plan.disbands.forEach((id, index) => {
+    if (ids.has(id)) errors.push({ code: "DUPLICATE_DISBAND", index, unitId: id, message: `Unit ${id} is listed more than once.` });
+    ids.add(id);
+    const unit = state.units.find((u) => u.id === id);
+    if (!unit) errors.push({ code: "UNKNOWN_UNIT", index, unitId: id, message: `Unit ${id} is not in this game.` });
+    else if (unit.power !== power) errors.push({ code: "WRONG_POWER", index, unitId: id, message: `${powerName(power)} cannot disband another power's unit.` });
+  });
+  return { valid: errors.length === 0, value: errors.length === 0 ? plan : undefined, errors };
+}
+
+export function validBuildTypes(state: GameState, power: PowerId, loc: string): UnitType[] {
+  return (["A", "F"] as UnitType[]).filter((type) => validateAdjustmentPlan(state, power, { builds: [{ power, type, loc }], disbands: [] }).valid);
+}
+
+export function validDisbandUnitIds(state: GameState, power: PowerId): string[] {
+  return state.units.filter((unit) => unit.power === power && validateAdjustmentPlan(state, power, { builds: [], disbands: [unit.id] }).valid).map((unit) => unit.id);
+}
+
 export function applyAdjustments(state: GameState, plan: AdjustPlan): GameState {
+  const powers = new Set<PowerId>([
+    ...plan.builds.map((b) => b.power),
+    ...plan.disbands.map((id) => state.units.find((u) => u.id === id)?.power).filter((p): p is PowerId => !!p),
+  ]);
+  const errors = [...powers].flatMap((power) => validateAdjustmentPlan(state, power, {
+    builds: plan.builds.filter((b) => b.power === power),
+    disbands: plan.disbands.filter((id) => state.units.find((u) => u.id === id)?.power === power),
+  }).errors);
+  if (errors.length) throw new Error(errors.map((error) => error.message).join(" "));
   let units = state.units.filter((u) => !plan.disbands.includes(u.id));
   let nextId = 1000 + units.length;
   for (const b of plan.builds) {

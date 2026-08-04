@@ -20,14 +20,17 @@ import {
   applyFallOwnership,
   emptyHomeCenters,
   generateAIOrders,
-  legalTargets,
-  neighbours,
   powerName,
   resolveMovement,
   supplyCount,
   topPower,
   unitCount,
   winnerOf,
+  validateAdjustmentPlan,
+  validBuildTypes,
+  validDisbandUnitIds,
+  validMoveTargets,
+  validSupportTargets,
   type AdjustPlan,
   type GameState,
   type Order,
@@ -97,14 +100,14 @@ export default function Game(props: GameProps) {
 
   const highlightMove = useMemo(() => {
     if (selectedUnit && (pendingMode === "move" || pendingMode === null)) {
-      return new Set(legalTargets(selectedUnit));
+      return new Set(validMoveTargets(game, selectedUnit));
     }
     return new Set<string>();
-  }, [pendingMode, selectedUnit]);
+  }, [game, pendingMode, selectedUnit]);
 
   const highlightSupport = useMemo(() => {
     if (pendingMode === "support" && selectedUnit) {
-      return new Set(neighbours(selectedUnit.loc).filter((id) => game.units.some((u) => u.loc === id)));
+      return new Set(validSupportTargets(game, selectedUnit));
     }
     return new Set<string>();
   }, [pendingMode, selectedUnit, game.units]);
@@ -117,19 +120,18 @@ export default function Game(props: GameProps) {
       const u = game.units.find((x) => x.power === human && x.loc === id);
       if (u) {
         if (disbands.includes(u.id)) setDisbands(disbands.filter((d) => d !== u.id));
-        else if (disbands.length < mustDisbandN) setDisbands([...disbands, u.id]);
+        else if (disbands.length < mustDisbandN && disbandableIds.has(u.id)) setDisbands([...disbands, u.id]);
         return;
       }
       if (buildCenters.includes(id)) {
         const existing = builds.find(b => b.loc === id);
         if (existing) {
-          const isCoastal = !!PROVINCE_MAP[id].coast;
-          if (existing.type === "A" && isCoastal) {
+          if (existing.type === "A" && buildTypesByCenter[id]?.includes("F")) {
             setBuilds(builds.map(b => b.loc === id ? { ...b, type: "F" } : b));
           } else {
             setBuilds(builds.filter(b => b.loc !== id));
           }
-        } else if (builds.length < canBuildN) {
+        } else if (builds.length < canBuildN && buildTypesByCenter[id]?.includes("A")) {
           setBuilds([...builds, { type: "A", loc: id }]);
         }
       }
@@ -182,7 +184,7 @@ export default function Game(props: GameProps) {
   const onUnit = (u: Unit) => {
     if (game.phase === "Adjust" && u.power === human) {
       if (disbands.includes(u.id)) setDisbands(disbands.filter((d) => d !== u.id));
-      else if (disbands.length < mustDisbandN) setDisbands([...disbands, u.id]);
+      else if (disbands.length < mustDisbandN && disbandableIds.has(u.id)) setDisbands([...disbands, u.id]);
       return;
     }
     if (game.phase !== "Order") return;
@@ -315,15 +317,18 @@ export default function Game(props: GameProps) {
   const buildCenters = emptyHomeCenters(game, human);
   const canBuildN = Math.min(Math.max(0, sc[human] - uc[human]), buildCenters.length);
   const mustDisbandN = Math.max(0, uc[human] - sc[human]);
-  const adjustValid = builds.length === canBuildN && disbands.length === mustDisbandN;
+  const adjustmentPlan: AdjustPlan = {
+    builds: builds.map((b) => ({ power: human, ...b })),
+    disbands,
+  };
+  const adjustmentValidation = validateAdjustmentPlan(game, human, adjustmentPlan, true);
+  const adjustValid = adjustmentValidation.valid;
+  const buildTypesByCenter = Object.fromEntries(buildCenters.map((loc) => [loc, validBuildTypes(game, human, loc)]));
+  const disbandableIds = new Set(validDisbandUnitIds(game, human));
 
   const confirmAdjust = () => {
     if (!adjustValid) return;
-    const plan: AdjustPlan = {
-      builds: builds.map((b) => ({ power: human, type: b.type, loc: b.loc })),
-      disbands,
-    };
-    let g = applyAdjustments(game, plan);
+    let g = applyAdjustments(game, adjustmentPlan);
     const ny = game.year + 1;
     g = {
       ...g,
@@ -496,6 +501,8 @@ export default function Game(props: GameProps) {
                   orders={humanOrders}
                   selectedUnit={selectedUnit}
                   pendingMode={pendingMode}
+                  canMove={highlightMove.size > 0}
+                  canSupport={selectedUnit ? validSupportTargets(game, selectedUnit).length > 0 : false}
                   onSelect={setSelectedUnitId}
                   onHold={() => {
                     if (selectedUnit) {
@@ -518,6 +525,9 @@ export default function Game(props: GameProps) {
                   builds={builds}
                   disbands={disbands}
                   valid={adjustValid}
+                  errors={adjustmentValidation.errors}
+                  buildTypesByCenter={buildTypesByCenter}
+                  disbandableIds={disbandableIds}
                   onBuild={(b) => {
                     if (builds.length < canBuildN && !builds.some((x) => x.loc === b.loc)) {
                       setBuilds([...builds, b]);

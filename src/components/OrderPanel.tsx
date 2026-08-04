@@ -13,6 +13,8 @@ interface OrderPanelProps {
   onHold: () => void;
   onMove: () => void;
   onSupport: () => void;
+  canMove: boolean;
+  canSupport: boolean;
   onClearAll: () => void;
 }
 
@@ -44,8 +46,8 @@ export default function OrderPanel(props: OrderPanelProps) {
           </p>
           <div className="grid grid-cols-3 gap-2">
             <OrderButton onClick={props.onHold} icon={<Hand size={14} />} label="Hold" tone="slate" />
-            <OrderButton onClick={props.onMove} icon={<ArrowRight size={14} />} label="Move" tone="amber" />
-            <OrderButton onClick={props.onSupport} icon={<LifeBuoy size={14} />} label="Support" tone="cyan" />
+            <OrderButton onClick={props.onMove} disabled={!props.canMove} icon={<ArrowRight size={14} />} label="Move" tone="amber" />
+            <OrderButton onClick={props.onSupport} disabled={!props.canSupport} icon={<LifeBuoy size={14} />} label="Support" tone="cyan" />
           </div>
         </div>
       ) : (
@@ -98,9 +100,10 @@ interface OrderButtonProps {
   icon: React.ReactNode;
   label: string;
   tone: "slate" | "amber" | "cyan";
+  disabled?: boolean;
 }
 
-function OrderButton({ onClick, icon, label, tone }: OrderButtonProps) {
+function OrderButton({ onClick, icon, label, tone, disabled }: OrderButtonProps) {
   const tones = {
     slate: "bg-slate-800/80 hover:bg-slate-700/95 text-slate-100 border border-slate-700/50",
     amber: "bg-amber-600/90 hover:bg-amber-500 text-amber-950 font-extrabold border border-amber-500/40",
@@ -109,7 +112,8 @@ function OrderButton({ onClick, icon, label, tone }: OrderButtonProps) {
   return (
     <button
       onClick={onClick}
-      className={`flex flex-col items-center justify-center gap-1.5 rounded-lg px-2.5 py-2.5 text-[10.5px] font-bold uppercase tracking-wider transition-all duration-200 active:scale-95 shadow-sm ${tones[tone]}`}
+      disabled={disabled}
+      className={`flex flex-col items-center justify-center gap-1.5 rounded-lg px-2.5 py-2.5 text-[10.5px] font-bold uppercase tracking-wider transition-all duration-200 active:scale-95 shadow-sm disabled:cursor-not-allowed disabled:opacity-30 ${tones[tone]}`}
     >
       <span className="opacity-90">{icon}</span>
       {label}
