@@ -120,10 +120,11 @@ export function validateMovementOrder(
     return { valid: true, value: { type: "move", to: order.to }, errors: [] };
   }
   if (order.type === "support") {
-    if (typeof order.supLoc !== "string") return fail({ code: "MISSING_TARGET", unitId: unit.id, message: "A support order requires a unit to support." });
-    if (!neighbours(unit.loc).includes(order.supLoc)) return fail({ code: "ILLEGAL_DESTINATION", unitId: unit.id, loc: order.supLoc, message: `${unitLabel(unit)} cannot support ${provName(order.supLoc)}.` });
-    if (!state.units.some((u) => u.loc === order.supLoc)) return fail({ code: "NO_UNIT_TO_SUPPORT", unitId: unit.id, loc: order.supLoc, message: `There is no unit in ${provName(order.supLoc)} to support.` });
-    return { valid: true, value: { type: "support", supLoc: order.supLoc }, errors: [] };
+    if (typeof order.supportFrom !== "string") return fail({ code: "MISSING_TARGET", unitId: unit.id, message: "A support order requires a unit to support." });
+    const destination = order.supportTo ?? order.supportFrom;
+    if (!legalTargets(unit).includes(destination)) return fail({ code: "ILLEGAL_DESTINATION", unitId: unit.id, loc: destination, message: `${unitLabel(unit)} cannot support action in ${provName(destination)}.` });
+    if (!state.units.some((u) => u.loc === order.supportFrom)) return fail({ code: "NO_UNIT_TO_SUPPORT", unitId: unit.id, loc: order.supportFrom, message: `There is no unit in ${provName(order.supportFrom)} to support.` });
+    return { valid: true, value: { type: "support", supportFrom: order.supportFrom, supportTo: order.supportTo }, errors: [] };
   }
   return fail({ code: "INVALID_ORDER_TYPE", unitId: unit.id, message: "The order type is invalid." });
 }
@@ -133,7 +134,7 @@ export function validMoveTargets(state: GameState, unit: Unit): string[] {
 }
 
 export function validSupportTargets(state: GameState, unit: Unit): string[] {
-  return neighbours(unit.loc).filter((supLoc) => validateMovementOrder(state, unit, { type: "support", supLoc }).valid);
+  return neighbours(unit.loc).filter((supportFrom) => validateMovementOrder(state, unit, { type: "support", supportFrom }).valid);
 }
 
 /** Invalid, missing, and foreign order keys are harmless: every affected unit holds. */
@@ -208,7 +209,7 @@ export function winnerOf(state: GameState): PowerId | undefined {
 }
 
 // ---------------------------------------------------------------------------
-// Movement adjudication (iterative fixpoint so chain moves resolve correctly)
+// Movement adjudication
 // ---------------------------------------------------------------------------
 export interface MovementResult {
   units: Unit[];
@@ -221,6 +222,144 @@ export function unitLabel(u: Unit): string {
   return `${u.type === "A" ? "Army" : "Fleet"} ${provName(u.loc)}`;
 }
 
+interface ValidSupport { supporter: Unit; order: Order }
+
+/** Return only supports that match the order being supported and are in range. */
+function validateSupports(units: Unit[], orders: Record<string, Order>): ValidSupport[] {
+  const unitAt = new Map(units.map((unit) => [unit.loc, unit]));
+  return units.flatMap((supporter) => {
+    const order = orders[supporter.id];
+    if (order.type !== "support" || !order.supportFrom) return [];
+    const supported = unitAt.get(order.supportFrom);
+    if (!supported) return [];
+    const destination = order.supportTo ?? supported.loc;
+    if (!legalTargets(supporter).includes(destination)) return [];
+    const supportedOrder = orders[supported.id];
+    const matches = order.supportTo
+      ? supportedOrder.type === "move" && supportedOrder.to === order.supportTo
+      : supportedOrder.type !== "move";
+    return matches ? [{ supporter, order }] : [];
+  });
+}
+
+/** Determine support cuts without mutating the normalized orders. */
+function findCutSupports(
+  units: Unit[], orders: Record<string, Order>, supports: ValidSupport[], forced: ReadonlySet<string>,
+): Set<string> {
+  const cut = new Set(forced);
+  for (const { supporter, order } of supports) {
+    const exemptProvince = order.supportTo ?? order.supportFrom;
+    if (units.some((attacker) => {
+      const attack = orders[attacker.id];
+      return attack.type === "move" && attack.to === supporter.loc &&
+        attacker.power !== supporter.power && attacker.loc !== exemptProvince;
+    })) cut.add(supporter.id);
+  }
+  return cut;
+}
+
+function calculateStrengths(
+  units: Unit[], orders: Record<string, Order>, supports: ValidSupport[], cut: ReadonlySet<string>,
+): { attack: Map<string, number>; defence: Map<string, number> } {
+  const unitAt = new Map(units.map((unit) => [unit.loc, unit]));
+  const attack = new Map(units.map((unit) => [unit.id, orders[unit.id].type === "move" ? 1 : 0]));
+  const defence = new Map(units.map((unit) => [unit.id, 1]));
+  for (const { supporter, order } of supports) {
+    if (cut.has(supporter.id)) continue;
+    const supported = unitAt.get(order.supportFrom!);
+    if (!supported) continue;
+    if (order.supportTo) attack.set(supported.id, (attack.get(supported.id) ?? 0) + 1);
+    else defence.set(supported.id, (defence.get(supported.id) ?? 1) + 1);
+  }
+  return { attack, defence };
+}
+
+/** A tied destination has no winner; otherwise return its strongest attack. */
+function resolveDestinationContests(
+  units: Unit[], orders: Record<string, Order>, strength: ReadonlyMap<string, number>,
+): Map<string, Unit> {
+  const attacks = new Map<string, Unit[]>();
+  for (const unit of units) {
+    const order = orders[unit.id];
+    if (order.type === "move" && order.to) attacks.set(order.to, [...(attacks.get(order.to) ?? []), unit]);
+  }
+  const winners = new Map<string, Unit>();
+  for (const [destination, contenders] of attacks) {
+    const best = Math.max(...contenders.map((unit) => strength.get(unit.id) ?? 1));
+    const strongest = contenders.filter((unit) => strength.get(unit.id) === best);
+    if (strongest.length === 1) winners.set(destination, strongest[0]);
+  }
+  return winners;
+}
+
+interface MovementDecision { success: Set<string>; dislodged: Set<string>; attackerSrc: Map<string, string> }
+
+/**
+ * Resolve move dependencies. DFS deliberately treats a revisited dependency as
+ * a successful circular movement. Two-unit swaps are battles, handled before
+ * dependency traversal, so only genuine rotations receive that treatment.
+ */
+function resolveMoveDependencies(
+  units: Unit[], orders: Record<string, Order>, winners: ReadonlyMap<string, Unit>,
+  attack: ReadonlyMap<string, number>, defence: ReadonlyMap<string, number>,
+): MovementDecision {
+  const unitAt = new Map(units.map((unit) => [unit.loc, unit]));
+  const status = new Map<string, boolean>();
+  const visiting = new Set<string>();
+  const dislodged = new Set<string>();
+  const attackerSrc = new Map<string, string>();
+
+  const decide = (unit: Unit): boolean => {
+    if (status.has(unit.id)) return status.get(unit.id)!;
+    if (visiting.has(unit.id)) {
+      status.set(unit.id, true); // an SCC of length >= 3 rotates together
+      return true;
+    }
+    const order = orders[unit.id];
+    if (order.type !== "move" || !order.to || winners.get(order.to)?.id !== unit.id) {
+      status.set(unit.id, false);
+      return false;
+    }
+    visiting.add(unit.id);
+    const holder = unitAt.get(order.to);
+    let succeeds = !holder;
+    if (holder) {
+      const holderOrder = orders[holder.id];
+      const headToHead = holderOrder.type === "move" && holderOrder.to === unit.loc;
+      if (headToHead) {
+        succeeds = holder.power !== unit.power && (attack.get(unit.id) ?? 1) > (attack.get(holder.id) ?? 1);
+      } else if (holderOrder.type === "move" && decide(holder)) {
+        succeeds = true;
+      } else {
+        succeeds = holder.power !== unit.power && (attack.get(unit.id) ?? 1) >
+          (holderOrder.type === "move" ? 1 : (defence.get(holder.id) ?? 1));
+      }
+      if (succeeds && !(holderOrder.type === "move" && status.get(holder.id))) {
+        dislodged.add(holder.id);
+        attackerSrc.set(holder.id, unit.loc);
+        status.set(holder.id, false);
+      }
+    }
+    visiting.delete(unit.id);
+    status.set(unit.id, succeeds);
+    return succeeds;
+  };
+
+  for (const unit of units) decide(unit);
+  return {
+    success: new Set(units.filter((unit) => status.get(unit.id)).map((unit) => unit.id)),
+    dislodged,
+    attackerSrc,
+  };
+}
+
+function applySuccessfulMovements(units: Unit[], orders: Record<string, Order>, decision: MovementDecision): Unit[] {
+  return units.filter((unit) => !decision.dislodged.has(unit.id)).map((unit) => {
+    const order = orders[unit.id];
+    return order.type === "move" && order.to && decision.success.has(unit.id) ? { ...unit, loc: order.to } : { ...unit };
+  });
+}
+
 export function resolveMovement(
   state: GameState,
   orders: Record<string, Order>,
@@ -229,162 +368,37 @@ export function resolveMovement(
   const units = state.units;
   orders = normalizeMovementOrders(state, orders);
   const events: string[] = [];
-  const unitAt: Record<string, Unit> = {};
-  for (const u of units) unitAt[u.loc] = u;
-
-  const getOrder = (u: Unit): Order => orders[u.id] ?? { type: "hold" };
-
-  // --- Supports and which ones are cut -------------------------------------
-  const supporters = units
-    .map((u) => ({ u, o: getOrder(u) }))
-    .filter((x) => {
-      if (x.o.type !== "support" || !x.o.supportFrom) return false;
-      const supported = unitAt[x.o.supportFrom];
-      if (!supported) return false;
-      const destination = x.o.supportTo ?? x.o.supportFrom;
-      if (!legalTargets(x.u).includes(destination)) return false;
-
-      const supportedOrder = getOrder(supported);
-      if (x.o.supportTo) {
-        return supportedOrder.type === "move" && supportedOrder.to === x.o.supportTo;
-      }
-      // A unit ordered to move cannot receive defensive support, even if its
-      // move will ultimately fail. Holds and supports defend their province.
-      return supportedOrder.type !== "move";
-    });
-
-  const cut = new Set<string>(forcedCuts);
-  for (const { u, o } of supporters) {
-    const supportedDestination = o.supportTo ?? o.supportFrom;
-    for (const m of units) {
-      const mo = getOrder(m);
-      if (
-        mo.type === "move" &&
-        mo.to === u.loc &&
-        m.power !== u.power &&
-        m.loc !== supportedDestination
-      ) {
-        cut.add(u.id);
-        break;
-      }
-    }
-  }
-
-  // --- Strength helpers -----------------------------------------------------
-  const moveStr = (u: Unit): number => {
-    const o = getOrder(u);
-    if (o.type !== "move" || !o.to) return 0;
-    let s = 1;
-    for (const { u: su, o: so } of supporters) {
-      if (cut.has(su.id)) continue;
-      const supported = unitAt[so.supportFrom as string];
-      if (!supported || supported.id !== u.id) continue;
-      if (so.supportTo === o.to) s += 1;
-    }
-    return s;
-  };
-
-  const holdStr = (loc: string): number => {
-    const holder = unitAt[loc];
-    if (!holder) return 0;
-    let s = 1;
-    for (const { u: su, o: so } of supporters) {
-      if (cut.has(su.id)) continue;
-      if (so.supportFrom === loc && !so.supportTo) s += 1;
-    }
-    return s;
-  };
-
-  const bestUnique = (list: Unit[]): Unit | null => {
-    let best: Unit | null = null;
-    let bestStr = -1;
-    let tie = false;
-    for (const u of list) {
-      const s = moveStr(u);
-      if (s > bestStr) {
-        best = u;
-        bestStr = s;
-        tie = false;
-      } else if (s === bestStr) tie = true;
-    }
-    return tie ? null : best;
-  };
-
-  // --- Group moves by destination -------------------------------------------
-  const byDest: Record<string, Unit[]> = {};
-  for (const u of units) {
-    const o = getOrder(u);
-    if (o.type === "move" && o.to) (byDest[o.to] ??= []).push(u);
-  }
-
-  const success = new Set<string>();
-  const dislodged = new Set<string>();
-  const attackerSrc: Record<string, string> = {};
-
-  // Fixpoint: a province opens only when its holder's move has *succeeded*.
-  let active = true;
-  let guard = 0;
-  while (active && guard++ < 60) {
-    active = false;
-    for (const dest of Object.keys(byDest)) {
-      const pending = byDest[dest].filter(
-        (u) => !success.has(u.id) && !dislodged.has(u.id),
-      );
-      if (pending.length === 0) continue;
-
-      const holder = unitAt[dest];
-      const holderMoving = holder && getOrder(holder).type === "move";
-      const open =
-        !holder || dislodged.has(holder.id) || (holderMoving && success.has(holder.id));
-
-      if (open) {
-        const b = bestUnique(pending);
-        if (b) {
-          success.add(b.id);
-          active = true;
-        }
-        continue;
-      }
-
-      // Occupied and staying: enemies must beat the defender's strength.
-      const def = holderMoving ? 1 : holdStr(dest); // a moving unit defends alone
-      const enemies = pending.filter((u) => u.power !== holder!.power);
-      const b = bestUnique(enemies);
-      if (b && moveStr(b) > def) {
-        success.add(b.id);
-        dislodged.add(holder!.id);
-        attackerSrc[holder!.id] = b.loc;
-        // If the holder had already "won" its own destination, its move now
-        // fails — unwind so the destination can be contested again.
-        if (holderMoving && success.has(holder!.id)) success.delete(holder!.id);
-        active = true;
-      }
-    }
-  }
+  const unitAt = new Map(units.map((unit) => [unit.loc, unit]));
+  const supports = validateSupports(units, orders);
+  const cut = findCutSupports(units, orders, supports, forcedCuts);
+  const strengths = calculateStrengths(units, orders, supports, cut);
+  const winners = resolveDestinationContests(units, orders, strengths.attack);
+  const decision = resolveMoveDependencies(units, orders, winners, strengths.attack, strengths.defence);
+  const { success, dislodged } = decision;
 
   // An attack from the province into which support is directed is normally
   // exempt from cutting that support. It does cut it if it actually dislodges
   // the supporter, so adjudicate again without that support. Repeating handles
   // the (rare) case where removing one support exposes another supporter.
-  const newlyCut = supporters
-    .filter(({ u, o }) => {
-      if (cut.has(u.id) || !dislodged.has(u.id)) return false;
+  const newlyCut = supports
+    .filter(({ supporter, order }) => {
+      if (cut.has(supporter.id) || !dislodged.has(supporter.id)) return false;
       const attacker = units.find((candidate) => {
-        const order = getOrder(candidate);
-        return success.has(candidate.id) && order.type === "move" && order.to === u.loc;
+        const candidateOrder = orders[candidate.id];
+        return success.has(candidate.id) && candidateOrder.type === "move" && candidateOrder.to === supporter.loc;
       });
-      return !!attacker && attacker.loc === (o.supportTo ?? o.supportFrom);
+      return !!attacker && attacker.loc === (order.supportTo ?? order.supportFrom);
     })
-    .map(({ u }) => u.id);
+    .map(({ supporter }) => supporter.id);
   if (newlyCut.length > 0) {
     return resolveMovement(state, orders, new Set([...cut, ...newlyCut]));
   }
 
   // --- Events ---------------------------------------------------------------
   for (const u of units) {
-    const o = getOrder(u);
+    const o = orders[u.id];
     if (o.type !== "move" || !o.to || !success.has(u.id)) continue;
-    const vacated = unitAt[o.to];
+    const vacated = unitAt.get(o.to);
     if (vacated && dislodged.has(vacated.id)) {
       events.push(
         `${unitLabel(u)} storms ${provName(o.to)}, driving out the ${powerName(vacated.power)} ${vacated.type === "A" ? "army" : "fleet"}.`,
@@ -394,33 +408,21 @@ export function resolveMovement(
     }
   }
   for (const u of units) {
-    const o = getOrder(u);
+    const o = orders[u.id];
     if (o.type === "move" && o.to && !success.has(u.id) && !dislodged.has(u.id)) {
       events.push(`${unitLabel(u)} fails to reach ${provName(o.to)} — the move bounces.`);
     }
   }
 
   // --- Apply moves -----------------------------------------------------------
+  const result = applySuccessfulMovements(units, orders, decision);
   const occupied = new Set<string>();
-  const survivors = units.filter((u) => !dislodged.has(u.id));
-  for (const u of survivors) occupied.add(u.loc);
-
-  const result: Unit[] = [];
-  for (const u of survivors) {
-    const o = getOrder(u);
-    if (o.type === "move" && o.to && success.has(u.id)) {
-      occupied.delete(u.loc);
-      occupied.add(o.to);
-      result.push({ ...u, loc: o.to });
-    } else {
-      result.push({ ...u });
-    }
-  }
+  for (const moved of result) occupied.add(moved.loc);
 
   // --- Retreats or disbands ---------------------------------------------------
   for (const u of units) {
     if (!dislodged.has(u.id)) continue;
-    const src = attackerSrc[u.id];
+    const src = decision.attackerSrc.get(u.id);
     const cands = legalTargets(u).filter(
       (id) => !occupied.has(id) && id !== src && !result.some((r) => r.loc === id),
     );
@@ -437,7 +439,7 @@ export function resolveMovement(
   // --- Highlight set -----------------------------------------------------------
   const changed = new Set<string>();
   for (const u of units) {
-    const o = getOrder(u);
+    const o = orders[u.id];
     if (o.type === "move" && o.to && success.has(u.id)) changed.add(o.to);
   }
   for (const u of units) if (dislodged.has(u.id)) changed.add(u.loc);

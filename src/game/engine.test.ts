@@ -1,14 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { resolveMovement, type GameState, type Order, type Unit } from "./engine";
-
 import {
   createGame,
   normalizeMovementOrders,
   resolveMovement,
-  supplyCount,
-  unitCount,
   validateAdjustmentPlan,
   validateMovementOrder,
+  type GameState,
+  type Order,
+  type Unit,
 } from "./engine";
 const unit = (id: string, loc: string, power: Unit["power"]): Unit => ({
   id,
@@ -25,6 +24,73 @@ const state = (units: Unit[]): GameState => ({
   centers: {},
   human: "FRA",
   log: [],
+});
+
+const locations = (result: ReturnType<typeof resolveMovement>) =>
+  Object.fromEntries(result.units.map((candidate) => [candidate.id, candidate.loc]));
+
+describe("dependency-graph movement adjudication", () => {
+  it("allows a three-unit circular rotation without requiring a first success", () => {
+    const units = [unit("one", "PAR", "FRA"), unit("two", "BUR", "GER"), unit("three", "GAS", "ITA")];
+    const result = resolveMovement(state(units), {
+      one: { type: "move", to: "BUR" },
+      two: { type: "move", to: "GAS" },
+      three: { type: "move", to: "PAR" },
+    });
+
+    expect(locations(result)).toMatchObject({ one: "BUR", two: "GAS", three: "PAR" });
+  });
+
+  it("resolves an ordinary chain backwards from a vacant province", () => {
+    const units = [unit("one", "PAR", "FRA"), unit("two", "BUR", "GER"), unit("three", "MUN", "ITA")];
+    const result = resolveMovement(state(units), {
+      one: { type: "move", to: "BUR" },
+      two: { type: "move", to: "MUN" },
+      three: { type: "move", to: "BER" },
+    });
+
+    expect(locations(result)).toMatchObject({ one: "BUR", two: "MUN", three: "BER" });
+  });
+
+  it("bounces equal-strength head-to-head moves", () => {
+    const units = [unit("left", "PAR", "FRA"), unit("right", "BUR", "GER")];
+    const result = resolveMovement(state(units), {
+      left: { type: "move", to: "BUR" }, right: { type: "move", to: "PAR" },
+    });
+
+    expect(locations(result)).toMatchObject({ left: "PAR", right: "BUR" });
+  });
+
+  it("lets the stronger supported move win a head-to-head battle", () => {
+    const units = [unit("left", "PAR", "FRA"), unit("support", "GAS", "FRA"), unit("right", "BUR", "GER")];
+    const result = resolveMovement(state(units), {
+      left: { type: "move", to: "BUR" },
+      support: { type: "support", supportFrom: "PAR", supportTo: "BUR" },
+      right: { type: "move", to: "PAR" },
+    });
+
+    expect(locations(result).left).toBe("BUR");
+    expect(locations(result).right).not.toBe("BUR");
+  });
+
+  it("creates a standoff when equal attacks contest one destination", () => {
+    const units = [unit("west", "PAR", "FRA"), unit("east", "MUN", "GER")];
+    const result = resolveMovement(state(units), {
+      west: { type: "move", to: "BUR" }, east: { type: "move", to: "BUR" },
+    });
+
+    expect(locations(result)).toMatchObject({ west: "PAR", east: "MUN" });
+  });
+
+  it("does not permit a power to dislodge its own unit", () => {
+    const units = [unit("attacker", "PAR", "FRA"), unit("support", "GAS", "FRA"), unit("holder", "BUR", "FRA")];
+    const result = resolveMovement(state(units), {
+      attacker: { type: "move", to: "BUR" },
+      support: { type: "support", supportFrom: "PAR", supportTo: "BUR" },
+    });
+
+    expect(locations(result)).toMatchObject({ attacker: "PAR", holder: "BUR" });
+  });
 });
 
 describe.each([
@@ -125,7 +191,7 @@ describe("movement validation", () => {
     expect(validateMovementOrder(game, london, { type: "move", to: "MOS" }).errors[0]).toMatchObject({
       code: "ILLEGAL_DESTINATION", loc: "MOS", unitId: london.id,
     });
-    expect(validateMovementOrder(game, london, { type: "support", supLoc: "WAL" }).errors[0]).toMatchObject({
+    expect(validateMovementOrder(game, london, { type: "support", supportFrom: "WAL" }).errors[0]).toMatchObject({
       code: "NO_UNIT_TO_SUPPORT", loc: "WAL",
     });
   });
