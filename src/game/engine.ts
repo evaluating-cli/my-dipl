@@ -292,12 +292,27 @@ function resolveDestinationContests(
   return winners;
 }
 
-interface MovementDecision { success: Set<string>; dislodged: Set<string>; attackerSrc: Map<string, string> }
+type MoveResolution =
+  | "vacant"
+  | "head-to-head"
+  | "circular"
+  | "dislodgement"
+  | "contested"
+  | "self-dislodgement"
+  | "disrupted";
+
+interface MovementDecision {
+  success: Set<string>;
+  dislodged: Set<string>;
+  attackerSrc: Map<string, string>;
+  resolution: Map<string, MoveResolution>;
+}
 
 /**
- * Resolve move dependencies. DFS deliberately treats a revisited dependency as
- * a successful circular movement. Two-unit swaps are battles, handled before
- * dependency traversal, so only genuine rotations receive that treatment.
+ * Resolve the functional dependency graph formed by moves into occupied
+ * provinces.  A cycle is committed as a unit rather than needing one of its
+ * moves to have succeeded already. Two-unit swaps are battles and are removed
+ * from the dependency graph before traversal.
  */
 function resolveMoveDependencies(
   units: Unit[], orders: Record<string, Order>, winners: ReadonlyMap<string, Unit>,
@@ -305,34 +320,51 @@ function resolveMoveDependencies(
 ): MovementDecision {
   const unitAt = new Map(units.map((unit) => [unit.loc, unit]));
   const status = new Map<string, boolean>();
-  const visiting = new Set<string>();
+  const resolution = new Map<string, MoveResolution>();
+  const path: Unit[] = [];
+  const pathIndex = new Map<string, number>();
   const dislodged = new Set<string>();
   const attackerSrc = new Map<string, string>();
 
   const decide = (unit: Unit): boolean => {
     if (status.has(unit.id)) return status.get(unit.id)!;
-    if (visiting.has(unit.id)) {
-      status.set(unit.id, true); // an SCC of length >= 3 rotates together
+    const cycleStart = pathIndex.get(unit.id);
+    if (cycleStart !== undefined) {
+      // Mark the entire strongly-connected component together. This is the
+      // essential difference between a rotation and an ordinary move chain.
+      for (const member of path.slice(cycleStart)) {
+        status.set(member.id, true);
+        resolution.set(member.id, "circular");
+      }
       return true;
     }
     const order = orders[unit.id];
     if (order.type !== "move" || !order.to || winners.get(order.to)?.id !== unit.id) {
       status.set(unit.id, false);
+      resolution.set(unit.id, "contested");
       return false;
     }
-    visiting.add(unit.id);
+    pathIndex.set(unit.id, path.length);
+    path.push(unit);
     const holder = unitAt.get(order.to);
     let succeeds = !holder;
+    let reason: MoveResolution = "vacant";
     if (holder) {
       const holderOrder = orders[holder.id];
       const headToHead = holderOrder.type === "move" && holderOrder.to === unit.loc;
       if (headToHead) {
         succeeds = holder.power !== unit.power && (attack.get(unit.id) ?? 1) > (attack.get(holder.id) ?? 1);
+        reason = holder.power === unit.power ? "self-dislodgement" : "head-to-head";
       } else if (holderOrder.type === "move" && decide(holder)) {
         succeeds = true;
+        // The dependency ultimately leads to a vacant province (or a cycle),
+        // so the holder leaves without having to be dislodged.
+        reason = "vacant";
       } else {
         succeeds = holder.power !== unit.power && (attack.get(unit.id) ?? 1) >
           (holderOrder.type === "move" ? 1 : (defence.get(holder.id) ?? 1));
+        reason = holder.power === unit.power ? "self-dislodgement" :
+          (succeeds ? "dislodgement" : "disrupted");
       }
       if (succeeds && !(holderOrder.type === "move" && status.get(holder.id))) {
         dislodged.add(holder.id);
@@ -340,8 +372,13 @@ function resolveMoveDependencies(
         status.set(holder.id, false);
       }
     }
-    visiting.delete(unit.id);
-    status.set(unit.id, succeeds);
+    path.pop();
+    pathIndex.delete(unit.id);
+    // A member may already have been committed while resolving its cycle.
+    if (!status.has(unit.id)) {
+      status.set(unit.id, succeeds);
+      resolution.set(unit.id, reason);
+    }
     return succeeds;
   };
 
@@ -350,6 +387,7 @@ function resolveMoveDependencies(
     success: new Set(units.filter((unit) => status.get(unit.id)).map((unit) => unit.id)),
     dislodged,
     attackerSrc,
+    resolution,
   };
 }
 
