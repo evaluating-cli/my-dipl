@@ -594,14 +594,14 @@ export function generateAIOrders(state: GameState): Record<string, Order> {
 
     // Pass 1 — grab adjacent uncontested supply centres.
     for (const u of mine) {
-      const targets = legalTargets(u).filter((t) => !occupied.has(t));
+      const targets = legalTargets(u).filter((t) => !occupied.has(provinceId(t)));
       const prize = targets
         .filter((t) => isUncontrolledSC(state, t, power))
         .sort((a, b) => dist[a] - dist[b])[0];
       if (prize) {
         orders[u.id] = { type: "move", to: prize };
-        occupied.delete(u.loc);
-        occupied.add(prize);
+        occupied.delete(provinceId(u.loc));
+        occupied.add(provinceId(prize));
       }
     }
 
@@ -610,12 +610,12 @@ export function generateAIOrders(state: GameState): Record<string, Order> {
       if (orders[u.id]) continue;
       const here = dist[u.loc] ?? 99;
       const step = legalTargets(u)
-        .filter((t) => !occupied.has(t) && (dist[t] ?? 99) < here)
+        .filter((t) => !occupied.has(provinceId(t)) && (dist[t] ?? 99) < here)
         .sort((a, b) => (dist[a] ?? 99) - (dist[b] ?? 99))[0];
       if (step) {
         orders[u.id] = { type: "move", to: step };
-        occupied.delete(u.loc);
-        occupied.add(step);
+        occupied.delete(provinceId(u.loc));
+        occupied.add(provinceId(step));
       }
     }
 
