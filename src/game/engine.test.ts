@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyAdjustments,
   createGame,
+  generateAIOrders,
   normalizeMovementOrders,
   resolveMovement,
   resolveRetreats,
@@ -33,6 +34,38 @@ const state = (units: Unit[]): GameState => ({
 
 const locations = (result: ReturnType<typeof resolveMovement>) =>
   Object.fromEntries(result.units.map((candidate) => [candidate.id, candidate.loc]));
+
+describe("AI split-coast occupancy", () => {
+  it("does not treat another coast alias of an occupied province as vacant", () => {
+    const game = state([
+      { ...unit("ai", "MAO", "FRA"), type: "F" },
+      { ...unit("occupant", "SPA/SC", "ITA"), type: "F" },
+    ]);
+    game.human = "ENG";
+    game.centers.SPA = "NEU";
+
+    const orders = generateAIOrders(game);
+
+    expect(orders.ai).not.toEqual(expect.objectContaining({ to: expect.stringMatching(/^SPA\//) }));
+  });
+
+  it("reserves a split-coast province once rather than reserving each alias", () => {
+    const game = state([
+      { ...unit("north", "MAO", "FRA"), type: "F" },
+      { ...unit("south", "WES", "FRA"), type: "F" },
+    ]);
+    game.human = "ENG";
+    game.centers.SPA = "NEU";
+
+    const orders = generateAIOrders(game);
+    const spanishMoves = Object.values(orders).filter(
+      (order) => order.type === "move" && order.to?.startsWith("SPA/"),
+    );
+
+    expect(spanishMoves).toHaveLength(1);
+    expect(spanishMoves[0].to).toMatch(/^SPA\/(?:NC|SC)$/);
+  });
+});
 
 describe("dependency-graph movement adjudication", () => {
   it("allows a three-unit circular rotation without requiring a first success", () => {
