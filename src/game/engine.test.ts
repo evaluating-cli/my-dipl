@@ -3,6 +3,8 @@ import {
   createGame,
   normalizeMovementOrders,
   resolveMovement,
+  resolveRetreats,
+  legalRetreatDestinations,
   validateAdjustmentPlan,
   validateMovementOrder,
   type GameState,
@@ -21,6 +23,7 @@ const state = (units: Unit[]): GameState => ({
   season: "Spring",
   phase: "Order",
   units,
+  dislodged: [],
   centers: {},
   human: "FRA",
   log: [],
@@ -246,5 +249,56 @@ describe("adjustment validation", () => {
     const result = validateAdjustmentPlan(game, "ENG", { builds: [], disbands: [french.id] });
 
     expect(result.errors).toContainEqual(expect.objectContaining({ code: "WRONG_POWER", unitId: french.id }));
+  });
+});
+
+describe("retreat adjudication", () => {
+  it("keeps dislodgements unresolved and permits retreat to an empty province", () => {
+    const game = state([unit("atk", "PAR", "FRA"), unit("sup", "PIC", "FRA"), unit("def", "BUR", "GER")]);
+    const movement = resolveMovement(game, {
+      atk: { type: "move", to: "BUR" },
+      sup: { type: "support", supportFrom: "PAR", supportTo: "BUR" },
+    });
+    expect(movement.units.some(({ id }) => id === "def")).toBe(false);
+    expect(movement.dislodged[0]).toMatchObject({ unit: { id: "def", loc: "BUR" }, attackerOrigin: "PAR" });
+
+    const retreatState = { ...game, units: movement.units, dislodged: movement.dislodged, phase: "Retreat" as const };
+    expect(legalRetreatDestinations(retreatState, movement.dislodged[0])).toContain("GAS");
+    expect(resolveRetreats(retreatState, { def: "GAS" }).units.find(({ id }) => id === "def")?.loc).toBe("GAS");
+  });
+
+  it("prohibits the attacker origin and every movement standoff province", () => {
+    const game = state([
+      unit("atk", "PAR", "FRA"), unit("sup", "PIC", "FRA"), unit("def", "BUR", "GER"),
+      unit("bounce1", "BRE", "ITA"), unit("bounce2", "SPA", "RUS"),
+    ]);
+    const movement = resolveMovement(game, {
+      atk: { type: "move", to: "BUR" }, sup: { type: "support", supportFrom: "PAR", supportTo: "BUR" },
+      bounce1: { type: "move", to: "GAS" }, bounce2: { type: "move", to: "GAS" },
+    });
+    const retreatState = { ...game, units: movement.units, dislodged: movement.dislodged };
+    const legal = legalRetreatDestinations(retreatState, movement.dislodged[0]);
+    expect(legal).not.toContain("PAR");
+    expect(legal).not.toContain("GAS");
+    expect(movement.dislodged[0].prohibitedStandoffProvinces).toContain("GAS");
+  });
+
+  it("disbands competing retreats to the same province", () => {
+    const game = state([]);
+    game.phase = "Retreat";
+    game.dislodged = [
+      { unit: unit("one", "PAR", "FRA"), attackerOrigin: "PIC", prohibitedStandoffProvinces: [] },
+      { unit: unit("two", "MUN", "GER"), attackerOrigin: "BER", prohibitedStandoffProvinces: [] },
+    ];
+    expect(resolveRetreats(game, { one: "BUR", two: "BUR" }).units).toEqual([]);
+  });
+
+  it("forces a disband when no legal retreat exists", () => {
+    const blocked = ["PIC", "BUR", "GAS", "BRE"].map((loc, index) => unit(`b${index}`, loc, "FRA"));
+    const game = state(blocked);
+    game.phase = "Retreat";
+    game.dislodged = [{ unit: unit("trapped", "PAR", "GER"), attackerOrigin: "PIC", prohibitedStandoffProvinces: [] }];
+    expect(legalRetreatDestinations(game, game.dislodged[0])).toEqual([]);
+    expect(resolveRetreats(game, {}).units.some(({ id }) => id === "trapped")).toBe(false);
   });
 });
