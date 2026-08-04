@@ -1,6 +1,5 @@
 import { SeaNode, LandNode, UnitNode } from "./MapNodes";
 import { useMemo, useState, useRef, useEffect, useCallback } from "react";
-import { RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
 import {
   POWER_MAP,
   PROVINCE_MAP,
@@ -127,11 +126,13 @@ export default function Board(props: BoardProps) {
         const rect = containerRef.current.getBoundingClientRect();
         const svgW = baseW / zoomScale;
         const svgH = baseH / zoomScale;
-        const scaleX = svgW / rect.width;
-        const scaleY = svgH / rect.height;
+        // `slice` uses one uniform scale and crops the overflowing axis.
+        // Converting both axes with that same scale keeps panning in sync with
+        // the rendered SVG regardless of the container's aspect ratio.
+        const renderedScale = Math.max(rect.width / svgW, rect.height / svgH);
 
-        const newPanX = panStartRef.current.x - dx * scaleX;
-        const newPanY = panStartRef.current.y - dy * scaleY;
+        const newPanX = panStartRef.current.x - dx / renderedScale;
+        const newPanY = panStartRef.current.y - dy / renderedScale;
 
         const maxPanX = 550;
         const maxPanY = 450;
@@ -176,18 +177,24 @@ export default function Board(props: BoardProps) {
     if (newScale === zoomScale) return;
 
     const rect = containerRef.current.getBoundingClientRect();
-    const mouseXRatio = (e.clientX - rect.left) / rect.width;
-    const mouseYRatio = (e.clientY - rect.top) / rect.height;
-
     const svgW = baseW / zoomScale;
     const svgH = baseH / zoomScale;
-    const svgMouseX = vx + mouseXRatio * svgW;
-    const svgMouseY = vy + mouseYRatio * svgH;
+    const renderedScale = Math.max(rect.width / svgW, rect.height / svgH);
+    const renderedW = svgW * renderedScale;
+    const renderedH = svgH * renderedScale;
+    const cropX = (renderedW - rect.width) / 2;
+    const cropY = (renderedH - rect.height) / 2;
+    const pointerSvgX = (e.clientX - rect.left + cropX) / renderedScale;
+    const pointerSvgY = (e.clientY - rect.top + cropY) / renderedScale;
+    const svgMouseX = vx + pointerSvgX;
+    const svgMouseY = vy + pointerSvgY;
 
     const newSvgW = baseW / newScale;
     const newSvgH = baseH / newScale;
-    const newVx = svgMouseX - mouseXRatio * newSvgW;
-    const newVy = svgMouseY - mouseYRatio * newSvgH;
+    const pointerXRatio = pointerSvgX / svgW;
+    const pointerYRatio = pointerSvgY / svgH;
+    const newVx = svgMouseX - pointerXRatio * newSvgW;
+    const newVy = svgMouseY - pointerYRatio * newSvgH;
 
     const newCenterX = newVx + newSvgW / 2;
     const newCenterY = newVy + newSvgH / 2;
@@ -205,6 +212,9 @@ export default function Board(props: BoardProps) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (["INPUT", "TEXTAREA"].includes((e.target as HTMLElement)?.tagName)) return;
+      // Preserve browser and assistive-technology shortcuts such as
+      // Ctrl/Cmd +, Ctrl/Cmd -, and Ctrl/Cmd 0.
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
 
       if (e.key === "+" || e.key === "=") {
         e.preventDefault();
@@ -529,35 +539,6 @@ export default function Board(props: BoardProps) {
         ))}
       </svg>
 
-      {/* ---- Interactive Zoom & Pan Controls Overlay ---- */}
-      <div className="absolute top-4 right-4 z-20 flex items-center gap-1.5 rounded-xl border border-[#a08c60]/40 bg-[#f8f1de]/90 p-1.5 shadow-xl backdrop-blur-sm">
-        <button
-          onClick={handleZoomIn}
-          title="Zoom In (+)"
-          className="rd-mapbtn"
-          aria-label="Zoom in"
-        >
-          <ZoomIn size={15} />
-        </button>
-        <button
-          onClick={handleZoomOut}
-          title="Zoom Out (-)"
-          className="rd-mapbtn"
-          aria-label="Zoom out"
-        >
-          <ZoomOut size={15} />
-        </button>
-        <button
-          onClick={handleResetZoom}
-          title="Reset Zoom & Recenter (0 / R)"
-          className="flex items-center gap-1.5 rounded-lg border border-[#a08c60]/60 bg-[#f8f1de] px-2.5 py-1 text-[11px] font-bold text-[#5c5140] shadow-sm transition hover:bg-[#fff8e6] active:scale-95"
-          aria-label="Reset zoom"
-        >
-          <span>{Math.round(zoomScale * 100)}%</span>
-          <RotateCcw size={12} className="text-[#8a7a56] shrink-0" />
-        </button>
-      </div>
-
       {/* ---- cartouche (hover info) ---- */}
       <div className="pointer-events-none absolute left-4 top-4 z-10 min-w-[200px] max-w-[240px] rounded-xl border border-[#a08c60]/50 bg-[#f8f1de]/90 px-4 py-3 shadow-2xl backdrop-blur-sm">
         {hover ? (
@@ -638,4 +619,3 @@ function HintPill({
     </div>
   );
 }
-

@@ -49,29 +49,6 @@ body {
   }
 }
 
-/* small circular map buttons (zoom controls) */
-.rd-mapbtn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
-  background: rgba(248, 241, 222, 0.92);
-  border: 1px solid #a08c60;
-  color: #5c5140;
-  box-shadow: 0 1px 3px rgba(60, 50, 30, 0.35);
-  transition:
-    background 0.15s ease,
-    transform 0.1s ease;
-}
-.rd-mapbtn:hover {
-  background: #fff8e6;
-}
-.rd-mapbtn:active {
-  transform: scale(0.92);
-}
-
 /* ------------------------------------------------------- scrollbar polish */
 *::-webkit-scrollbar {
   width: 8px;
