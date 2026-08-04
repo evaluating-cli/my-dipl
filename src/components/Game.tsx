@@ -20,6 +20,7 @@ import {
   applyFallOwnership,
   emptyHomeCenters,
   generateAIOrders,
+  legalTargets,
   powerName,
   resolveMovement,
   supplyCount,
@@ -107,13 +108,31 @@ export default function Game(props: GameProps) {
 
   const highlightSupport = useMemo(() => {
     if (pendingMode === "support" && selectedUnit) {
-      return new Set(validSupportTargets(game, selectedUnit));
+      const reachable = new Set(legalTargets(selectedUnit));
+      return new Set(
+        game.units
+          .filter((unit) => {
+            const order = humanOrders[unit.id];
+            const destination = order?.type === "move" ? order.to : unit.loc;
+            return !!destination && reachable.has(destination);
+          })
+          .map((unit) => unit.loc),
+      );
     }
     return new Set<string>();
-  }, [pendingMode, selectedUnit, game.units]);
+  }, [pendingMode, selectedUnit, game.units, humanOrders]);
 
   const setOrder = (unitId: string, order: Order) =>
     setHumanOrders((prev) => ({ ...prev, [unitId]: order }));
+
+  const supportOrderFor = (loc: string): Order | null => {
+    const supported = game.units.find((unit) => unit.loc === loc);
+    if (!supported) return null;
+    const supportedOrder = humanOrders[supported.id];
+    return supportedOrder?.type === "move" && supportedOrder.to
+      ? { type: "support", supportFrom: loc, supportTo: supportedOrder.to }
+      : { type: "support", supportFrom: loc };
+  };
 
   const onProvince = (id: string) => {
     if (game.phase === "Adjust") {
@@ -142,7 +161,8 @@ export default function Game(props: GameProps) {
     if (selectedUnit) {
       // 1) Support mode target click
       if (pendingMode === "support" && highlightSupport.has(id)) {
-        setOrder(selectedUnit.id, { type: "support", supLoc: id });
+        const order = supportOrderFor(id);
+        if (order) setOrder(selectedUnit.id, order);
         setPendingMode(null);
         return;
       }
@@ -192,7 +212,8 @@ export default function Game(props: GameProps) {
     if (u.power === human) {
       // Friendly unit clicked
       if (pendingMode === "support" && selectedUnit && highlightSupport.has(u.loc)) {
-        setOrder(selectedUnit.id, { type: "support", supLoc: u.loc });
+        const order = supportOrderFor(u.loc);
+        if (order) setOrder(selectedUnit.id, order);
         setPendingMode(null);
         return;
       }

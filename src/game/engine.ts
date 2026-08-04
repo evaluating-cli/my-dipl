@@ -24,7 +24,10 @@ export type OrderType = "hold" | "move" | "support";
 export interface Order {
   type: OrderType;
   to?: string; // destination for a move
-  supLoc?: string; // province of the supported unit
+  /** Source province of the unit receiving support. */
+  supportFrom?: string;
+  /** Destination of the supported move; omitted for support-to-hold. */
+  supportTo?: string;
 }
 
 export type ValidationErrorCode =
@@ -221,6 +224,7 @@ export function unitLabel(u: Unit): string {
 export function resolveMovement(
   state: GameState,
   orders: Record<string, Order>,
+  forcedCuts: ReadonlySet<string> = new Set(),
 ): MovementResult {
   const units = state.units;
   orders = normalizeMovementOrders(state, orders);
@@ -233,13 +237,33 @@ export function resolveMovement(
   // --- Supports and which ones are cut -------------------------------------
   const supporters = units
     .map((u) => ({ u, o: getOrder(u) }))
-    .filter((x) => x.o.type === "support" && x.o.supLoc);
+    .filter((x) => {
+      if (x.o.type !== "support" || !x.o.supportFrom) return false;
+      const supported = unitAt[x.o.supportFrom];
+      if (!supported) return false;
+      const destination = x.o.supportTo ?? x.o.supportFrom;
+      if (!legalTargets(x.u).includes(destination)) return false;
 
-  const cut = new Set<string>();
-  for (const { u } of supporters) {
+      const supportedOrder = getOrder(supported);
+      if (x.o.supportTo) {
+        return supportedOrder.type === "move" && supportedOrder.to === x.o.supportTo;
+      }
+      // A unit ordered to move cannot receive defensive support, even if its
+      // move will ultimately fail. Holds and supports defend their province.
+      return supportedOrder.type !== "move";
+    });
+
+  const cut = new Set<string>(forcedCuts);
+  for (const { u, o } of supporters) {
+    const supportedDestination = o.supportTo ?? o.supportFrom;
     for (const m of units) {
       const mo = getOrder(m);
-      if (mo.type === "move" && mo.to === u.loc && m.power !== u.power) {
+      if (
+        mo.type === "move" &&
+        mo.to === u.loc &&
+        m.power !== u.power &&
+        m.loc !== supportedDestination
+      ) {
         cut.add(u.id);
         break;
       }
@@ -253,10 +277,9 @@ export function resolveMovement(
     let s = 1;
     for (const { u: su, o: so } of supporters) {
       if (cut.has(su.id)) continue;
-      const supported = unitAt[so.supLoc as string];
+      const supported = unitAt[so.supportFrom as string];
       if (!supported || supported.id !== u.id) continue;
-      const so2 = getOrder(supported);
-      if (so2.type === "move" && so2.to === o.to) s += 1;
+      if (so.supportTo === o.to) s += 1;
     }
     return s;
   };
@@ -267,7 +290,7 @@ export function resolveMovement(
     let s = 1;
     for (const { u: su, o: so } of supporters) {
       if (cut.has(su.id)) continue;
-      if (so.supLoc === loc) s += 1;
+      if (so.supportFrom === loc && !so.supportTo) s += 1;
     }
     return s;
   };
@@ -337,6 +360,24 @@ export function resolveMovement(
         active = true;
       }
     }
+  }
+
+  // An attack from the province into which support is directed is normally
+  // exempt from cutting that support. It does cut it if it actually dislodges
+  // the supporter, so adjudicate again without that support. Repeating handles
+  // the (rare) case where removing one support exposes another supporter.
+  const newlyCut = supporters
+    .filter(({ u, o }) => {
+      if (cut.has(u.id) || !dislodged.has(u.id)) return false;
+      const attacker = units.find((candidate) => {
+        const order = getOrder(candidate);
+        return success.has(candidate.id) && order.type === "move" && order.to === u.loc;
+      });
+      return !!attacker && attacker.loc === (o.supportTo ?? o.supportFrom);
+    })
+    .map(({ u }) => u.id);
+  if (newlyCut.length > 0) {
+    return resolveMovement(state, orders, new Set([...cut, ...newlyCut]));
   }
 
   // --- Events ---------------------------------------------------------------
@@ -504,7 +545,10 @@ export function generateAIOrders(state: GameState): Record<string, Order> {
           const ao = orders[ally.id];
           return ao?.type === "move" && !!ao.to && isUncontrolledSC(state, ao.to, power);
         });
-      orders[u.id] = helper ? { type: "support", supLoc: helper.loc } : { type: "hold" };
+      const helperOrder = helper && orders[helper.id];
+      orders[u.id] = helper && helperOrder?.type === "move" && helperOrder.to
+        ? { type: "support", supportFrom: helper.loc, supportTo: helperOrder.to }
+        : { type: "hold" };
     }
   }
   return orders;

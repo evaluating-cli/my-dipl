@@ -41,7 +41,7 @@ export default function OrderPanel(props: OrderPanelProps) {
           </div>
           <p className="mb-2 text-[11px] font-medium leading-relaxed text-amber-200/90">
             {pendingMode === "support"
-              ? "Click a highlighted unit or province on the map to support it."
+              ? "Click a highlighted unit. Its move destination (or hold) will be recorded in the support order."
               : "Click any highlighted neighbouring province on the map to move directly:"}
           </p>
           <div className="grid grid-cols-3 gap-2">
@@ -54,7 +54,7 @@ export default function OrderPanel(props: OrderPanelProps) {
         <p className="mb-3.5 rounded-lg bg-black/30 border border-white/[0.03] p-3 text-[11px] leading-relaxed text-slate-400">
           Select a unit below or on the map. Unordered units hold their ground.{" "}
           <span className="font-semibold text-amber-200/90">Support</span> reinforces a neighbouring
-          unit — offensively if it attacks, defensively if it is attacked.
+          unit — its current move is supported offensively, otherwise it is supported to hold.
         </p>
       )}
 
