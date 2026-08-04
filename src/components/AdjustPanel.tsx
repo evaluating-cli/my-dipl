@@ -3,7 +3,7 @@ import { Plus, X, Minus, ArrowRight, Landmark } from "lucide-react";
 import UnitToken from "./UnitToken";
 import Panel from "./Panel";
 import { PROVINCE_MAP, type UnitType } from "../data/map";
-import { provName, type Unit } from "../game/engine";
+import { provName, type Unit, type ValidationError } from "../game/engine";
 
 interface AdjustPanelProps {
   canBuild: number;
@@ -13,6 +13,9 @@ interface AdjustPanelProps {
   builds: { type: UnitType; loc: string }[];
   disbands: string[];
   valid: boolean;
+  errors: ValidationError[];
+  buildTypesByCenter: Record<string, UnitType[]>;
+  disbandableIds: Set<string>;
   onBuild: (b: { type: UnitType; loc: string }) => void;
   onRemoveBuild: (loc: string) => void;
   onToggleDisband: (id: string) => void;
@@ -69,15 +72,15 @@ export default function AdjustPanel(props: AdjustPanelProps) {
                       </button>
                     ) : (
                       <div className="flex gap-1.5">
-                        <button
+                        {props.buildTypesByCenter[c]?.includes("A") && <button
                           onClick={() => props.onBuild({ type: "A", loc: c })}
                           disabled={builds.length >= canBuild}
                           className="flex items-center gap-1 rounded-md bg-slate-800 border border-slate-700/50 px-2 py-1.5 text-[10.5px] font-bold text-slate-100 transition hover:bg-slate-700 disabled:opacity-30"
                         >
                           <Plus size={11} />
                           Army
-                        </button>
-                        {coastal && (
+                        </button>}
+                        {coastal && props.buildTypesByCenter[c]?.includes("F") && (
                           <button
                             onClick={() => props.onBuild({ type: "F", loc: c })}
                             disabled={builds.length >= canBuild}
@@ -106,6 +109,7 @@ export default function AdjustPanel(props: AdjustPanelProps) {
                 <li key={u.id}>
                   <button
                     onClick={() => props.onToggleDisband(u.id)}
+                    disabled={!props.disbandableIds.has(u.id)}
                     className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm transition-all duration-200 ${
                       sel ? "border-rose-400/50 bg-rose-950/20 shadow-inner" : "border-[#443c30]/50 bg-[#14120f]/40 hover:border-[#a08c60]/35 hover:bg-[#14120f]/70"
                     }`}
@@ -134,6 +138,11 @@ export default function AdjustPanel(props: AdjustPanelProps) {
         <span>Advance to Spring {props.year + 1}</span>
         <ArrowRight size={15} />
       </motion.button>
+      {!valid && props.errors.length > 0 && (
+        <ul className="space-y-1 text-[11px] text-rose-300" role="alert">
+          {props.errors.map((error, index) => <li key={`${error.code}-${index}`}>{error.message}</li>)}
+        </ul>
+      )}
     </>
   );
 }
